@@ -1,0 +1,41 @@
+name: arkham_cards
+description: "An offline card reference for Arkham Horror: The Card Game."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Application Support, for the imported decks file.
+  path_provider: ^2.1.5
+  # The theme preference, and nothing else.
+  shared_preferences: ^2.3.4
+  # Swipe-to-delete that reveals a button. Cupertino has no equivalent, and
+  # Dismissible only does the full-swipe half of what SwiftUI's swipeActions do.
+  flutter_slidable: ^4.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  # No Material widgets are used, so its icon font is dead weight in a bundle
+  # that is already over a gigabyte.
+  uses-material-design: false
+
+  assets:
+    - assets/cards.json
+    - assets/decks.json
+    # 7,742 files, declared as a directory rather than one line each. Built by
+    # tools/build_assets.py and gitignored -- a fresh clone has card data and
+    # no art until that script has been run.
+    - assets/CardImages/
