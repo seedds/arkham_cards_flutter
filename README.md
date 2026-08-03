@@ -65,13 +65,13 @@ only on the maintainer's machine — so the transcoded art is published once as 
 release asset and downloaded by each run:
 
 ```sh
-/Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
-tools/publish_assets.sh   # 1.12 GiB tarball -> the card-images-v1 release
+./tools/publish_assets.sh   # 1.22 GB tarball -> the card-images-v1 release
+gh workflow run build.yml
+gh run download -n arkham-cards-apk
 ```
 
-Re-run `publish_assets.sh` when the art changes, bumping `TAG` and
-`IMAGES_TAG`. The workflow counts what it unpacks and fails if the tarball and
-`cards.json` have drifted apart.
+`RELEASING.md` has the whole procedure, including what to bump when the art
+changes and what the failures mean.
 
 ## Where the data comes from
 
@@ -129,6 +129,7 @@ lib/views/                    Cupertino, one file per screen
 test/                         88 tests, against the real bundled data
 .github/workflows/build.yml   APK and unsigned IPA, on a tag or on demand
 .github/fetch-images.sh       unpacks the release art onto a runner
+RELEASING.md                  how to publish the art and cut a build
 ```
 
 ## For agents and contributors

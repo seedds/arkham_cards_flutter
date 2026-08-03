@@ -14,6 +14,7 @@ flutter analyze
 
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 ./tools/publish_assets.sh         # push that art to the release CI builds from
+gh workflow run build.yml         # APK and unsigned IPA -- see RELEASING.md
 ```
 
 Use that Python for the asset script: it has Pillow, which the system one does
