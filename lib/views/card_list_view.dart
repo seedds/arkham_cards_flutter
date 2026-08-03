@@ -96,66 +96,65 @@ class _CardListViewState extends State<CardListView> {
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemBackground.resolveFrom(context),
-      child: CustomScrollView(
-        slivers: [
-          CupertinoSliverNavigationBar(
-            // Inline rather than large: the search field is pinned below it and
-            // a large title would push the first row off a short screen.
-            largeTitle: Text(
-              _results.isEmpty ? 'Cards' : '${grouped(_results.length)} Cards',
+      // The static bar, not the sliver one, because the count has to share the
+      // toolbar row with the sort and filter buttons. A sliver bar cannot do
+      // that: its largeTitle is asserted non-null and its 52pt extension is
+      // unconditional in portrait, so the count would sit on a row of its own
+      // and scroll away.
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(
+          _results.isEmpty ? 'Cards' : '${grouped(_results.length)} Cards',
+        ),
+        // Filter stays rightmost, where it has always been, and sort is
+        // added inside it rather than beside it.
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SortButton(
+              controller: _sortMenu,
+              sort: _sort,
+              onChanged: (sort) => _apply(sort: sort),
             ),
-            bottomMode: NavigationBarBottomMode.always,
-            stretch: false,
-            // Filter stays rightmost, where it has always been, and sort is
-            // added inside it rather than beside it.
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _SortButton(
-                  controller: _sortMenu,
-                  sort: _sort,
-                  onChanged: (sort) => _apply(sort: sort),
-                ),
-                const SizedBox(width: 8),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  onPressed: _openFilter,
-                  child: Icon(
-                    _query.isFiltered
-                        ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                        : CupertinoIcons.line_horizontal_3_decrease_circle,
-                    semanticLabel: 'Filter',
-                  ),
-                ),
-              ],
-            ),
-            // Pinned rather than collapsing, so the field the user is typing
-            // into cannot scroll away underneath them.
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(52),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: CupertinoSearchTextField(
-                  controller: _searchController,
-                  placeholder: 'Card name',
-                  onChanged: (text) =>
-                      _apply(query: _query.copyWith(searchText: text)),
-                ),
+            const SizedBox(width: 8),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              onPressed: _openFilter,
+              child: Icon(
+                _query.isFiltered
+                    ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
+                    : CupertinoIcons.line_horizontal_3_decrease_circle,
+                semanticLabel: 'Filter',
               ),
             ),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: CupertinoSearchTextField(
+              controller: _searchController,
+              placeholder: 'Card name',
+              onChanged: (text) =>
+                  _apply(query: _query.copyWith(searchText: text)),
+            ),
           ),
-          if (_results.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
+        ),
+      ),
+      // SafeArea in the empty case and a ListView in the full one, because
+      // each consumes the scaffold's top padding for the bar. A
+      // CustomScrollView is not a BoxScrollView and would consume neither,
+      // putting the first row under the bar.
+      child: _results.isEmpty
+          ? SafeArea(
               child: _EmptyState(
                 isFiltered: _query.isFiltered,
                 isSearching: isSearching,
                 onClear: () => _apply(query: _query.cleared()),
               ),
             )
-          else
-            SliverList.separated(
+          : ListView.separated(
               itemCount: _results.length,
               // Inset to where the text starts, as a plain list does, rather
               // than running under the thumbnail.
@@ -171,8 +170,6 @@ class _CardListViewState extends State<CardListView> {
                 return _CardListRow(card: card, onTap: () => _open(card));
               },
             ),
-        ],
-      ),
     );
   }
 }
