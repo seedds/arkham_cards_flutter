@@ -53,6 +53,26 @@ Of the generated assets the two JSON files are committed; `assets/CardImages/`
 is 1.20 GB and is not. **A fresh clone therefore has every card and no art, and
 the image tests fail until the script has been run.**
 
+## Prebuilt binaries
+
+`.github/workflows/build.yml` builds an APK and an unsigned IPA on a tag or on
+demand, and attaches both to the run. Neither is signed for distribution: the
+APK carries the debug keys, and the IPA has no signature at all, so **install
+it by re-signing with Sideloadly or AltStore**.
+
+CI cannot run the asset pipeline — it reads two upstream checkouts that exist
+only on the maintainer's machine — so the transcoded art is published once as a
+release asset and downloaded by each run:
+
+```sh
+/Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
+tools/publish_assets.sh   # 1.12 GiB tarball -> the card-images-v1 release
+```
+
+Re-run `publish_assets.sh` when the art changes, bumping `TAG` and
+`IMAGES_TAG`. The workflow counts what it unpacks and fails if the tarball and
+`cards.json` have drifted apart.
+
 ## Where the data comes from
 
 `tools/build_assets.py` reads the output of the Swift project's
@@ -94,6 +114,7 @@ byte-identical.
 
 ```
 tools/build_assets.py         asset pipeline, run by hand
+tools/publish_assets.sh       upload the art to a release, for CI to fetch
 tools/crosscheck.sh           diff the Dart models against the Swift ones
 tools/dump_dart.dart          one half of that diff
 lib/models/                   pure Dart, no Flutter imports
@@ -106,6 +127,8 @@ lib/models/                   pure Dart, no Flutter imports
   arkhamdb_client.dart        the one network call
 lib/views/                    Cupertino, one file per screen
 test/                         88 tests, against the real bundled data
+.github/workflows/build.yml   APK and unsigned IPA, on a tag or on demand
+.github/fetch-images.sh       unpacks the release art onto a runner
 ```
 
 ## For agents and contributors

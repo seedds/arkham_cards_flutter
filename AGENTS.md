@@ -13,6 +13,7 @@ flutter analyze
 ./tools/crosscheck.sh             # diff the Dart models against the Swift ones
 
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
+./tools/publish_assets.sh         # push that art to the release CI builds from
 ```
 
 Use that Python for the asset script: it has Pillow, which the system one does
@@ -103,6 +104,8 @@ specific to the port:
 | A bare `fontSize` matches SwiftUI | It does not. `.subheadline` and `.caption2` carry line heights; without them the card row stands 12pt shorter than the original. Measured, not guessed. |
 | SwiftUI's declared row insets are the whole story | A row also enforces a minimum height. The declared insets are 4pt; the real gap is nearer 9. |
 | Flutter's `ImageCache` can be split in two | It cannot. The Swift app kept thumbnails and full-size art apart so opening a card could not evict a screenful of rows; Flutter has one LRU and that guarantee is not expressible. |
+| `flutter build ipa --no-codesign` gives an unsigned IPA | There is no such flag on `build ipa`, and its export step needs a signing identity regardless. `--no-codesign` is on `build ios`, and stops at `build/ios/iphoneos/Runner.app`. The workflow zips that into `Payload/` by hand. |
+| A CI runner can hold two of these builds | It has 14 GB. A release iOS build leaves two distinct 1.2 GB copies of `Runner.app` — `iphoneos/` and `Release-iphoneos/`, different inodes, not hardlinks — plus dSYMs, and peaks near 8.4 GB. The workflow deletes the intermediates before zipping and prints `df -h`. |
 
 ## Conventions
 
