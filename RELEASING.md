@@ -2,11 +2,10 @@
 
 How to get an APK and an IPA out of GitHub Actions.
 
-CI cannot build the card art. `tools/build_assets.py` reads the Swift project's
-`Resources/`, which are themselves built from two upstream checkouts that exist
-only on the maintainer's machine — so the transcoded art is published once as a
-release asset, and every CI run downloads it. That is step 1, and it is only
-repeated when the art actually changes.
+CI cannot build the card art. `tools/build_assets.py` reads two upstream
+checkouts that exist only on the maintainer's machine — so the transcoded art
+is published once as a release asset, and every CI run downloads it. That is
+step 1, and it is only repeated when the art actually changes.
 
 Everything here needs `gh` authenticated against the repo.
 
@@ -75,7 +74,7 @@ git tag v1.0.0 && git push origin v1.0.0
 There is no build on ordinary pushes. Each run moves several GB, which is not
 worth spending on every commit.
 
-Both jobs fetch the art, count it, then run `flutter analyze` and the 88 tests
+Both jobs fetch the art, count it, then run `flutter analyze` and the 94 tests
 before building. `test/card_images_test.dart` checks every filename in
 `cards.json` resolves and every file is really a WebP, so it doubles as the
 integrity check on the transfer.

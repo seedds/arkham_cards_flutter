@@ -69,7 +69,7 @@ void main() {
   });
 
   testWidgets('a leftward drag at the edge does not go back', (tester) async {
-    // Paging, not going back -- the same rule the Swift recogniser applied.
+    // Paging, not going back: only a rightward drag is the back gesture.
     await pumpDetail(tester, codes: ['01001', '01002'], opensOn: '01001');
 
     await tester.flingFrom(const Offset(5, 400), const Offset(-400, 0), 1000);
@@ -79,8 +79,8 @@ void main() {
   });
 
   testWidgets('a single card still has a way back', (tester) async {
-    // The case that stranded the Swift screen: one page cannot be paged, and
-    // the back swipe had been installed only where a pager existed.
+    // The case a hand-rolled edge recogniser would strand: one page cannot be
+    // paged, so a back swipe installed only where a pager exists is no swipe.
     await pumpDetail(tester, codes: ['01001'], opensOn: '01001');
 
     await tester.flingFrom(const Offset(5, 400), const Offset(400, 0), 1000);

@@ -56,8 +56,8 @@ void main() {
   });
 
   test('every image is a WebP', () {
-    // Flutter's engine cannot decode the AVIF the Swift bundle held, so an
-    // image that slipped through untranscoded would render as nothing at all.
+    // Flutter's engine cannot decode the AVIF upstream holds, so an image
+    // that slipped through untranscoded would render as nothing at all.
     // Checked by magic number rather than by extension, which is the thing a
     // rename would get wrong.
     final wrong = <String>[];

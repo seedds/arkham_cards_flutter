@@ -22,7 +22,9 @@ class CardListView extends StatefulWidget {
 
 class _CardListViewState extends State<CardListView> {
   final _searchController = TextEditingController();
+  final _sortMenu = MenuController();
   CardQuery _query = const CardQuery();
+  CardSort _sort = CardSort.release;
   late List<model.Card> _results = widget.database.all;
 
   @override
@@ -32,7 +34,9 @@ class _CardListViewState extends State<CardListView> {
     // at launch instead. Same reason as ARKHAM_DECK.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (LaunchOptions.sort.isNotEmpty) _apply(sort: LaunchOptions.sortOrder);
       if (LaunchOptions.sheet == 'filter') _openFilter();
+      if (LaunchOptions.sheet == 'sort') _sortMenu.open();
       final card = widget.database.card(LaunchOptions.card);
       if (card != null) _open(card);
     });
@@ -54,11 +58,17 @@ class _CardListViewState extends State<CardListView> {
     ),
   );
 
-  void _apply(CardQuery query) {
-    if (query == _query) return;
+  /// The one way the list changes. Both arguments funnel through here so the
+  /// guard sees them together: sorting without touching the query still has to
+  /// get past it.
+  void _apply({CardQuery? query, CardSort? sort}) {
+    final wanted = query ?? _query;
+    final order = sort ?? _sort;
+    if (wanted == _query && order == _sort) return;
     setState(() {
-      _query = query;
-      _results = widget.database.cards(query);
+      _query = wanted;
+      _sort = order;
+      _results = widget.database.cards(wanted, sort: order);
     });
   }
 
@@ -77,7 +87,7 @@ class _CardListViewState extends State<CardListView> {
         scrollController: controller,
       ),
     );
-    if (edited != null) _apply(edited);
+    if (edited != null) _apply(query: edited);
   }
 
   @override
@@ -96,16 +106,29 @@ class _CardListViewState extends State<CardListView> {
             ),
             bottomMode: NavigationBarBottomMode.always,
             stretch: false,
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
-              minimumSize: Size.zero,
-              onPressed: _openFilter,
-              child: Icon(
-                _query.isFiltered
-                    ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
-                    : CupertinoIcons.line_horizontal_3_decrease_circle,
-                semanticLabel: 'Filter',
-              ),
+            // Filter stays rightmost, where it has always been, and sort is
+            // added inside it rather than beside it.
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SortButton(
+                  controller: _sortMenu,
+                  sort: _sort,
+                  onChanged: (sort) => _apply(sort: sort),
+                ),
+                const SizedBox(width: 8),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  onPressed: _openFilter,
+                  child: Icon(
+                    _query.isFiltered
+                        ? CupertinoIcons.line_horizontal_3_decrease_circle_fill
+                        : CupertinoIcons.line_horizontal_3_decrease_circle,
+                    semanticLabel: 'Filter',
+                  ),
+                ),
+              ],
             ),
             // Pinned rather than collapsing, so the field the user is typing
             // into cannot scroll away underneath them.
@@ -117,7 +140,7 @@ class _CardListViewState extends State<CardListView> {
                   controller: _searchController,
                   placeholder: 'Card name',
                   onChanged: (text) =>
-                      _apply(_query.copyWith(searchText: text)),
+                      _apply(query: _query.copyWith(searchText: text)),
                 ),
               ),
             ),
@@ -128,7 +151,7 @@ class _CardListViewState extends State<CardListView> {
               child: _EmptyState(
                 isFiltered: _query.isFiltered,
                 isSearching: isSearching,
-                onClear: () => _apply(_query.cleared()),
+                onClear: () => _apply(query: _query.cleared()),
               ),
             )
           else
@@ -154,6 +177,47 @@ class _CardListViewState extends State<CardListView> {
   }
 }
 
+/// The sort menu: a pull-down, so the order in force is readable without
+/// opening it costing a screen.
+class _SortButton extends StatelessWidget {
+  const _SortButton({
+    required this.controller,
+    required this.sort,
+    required this.onChanged,
+  });
+
+  final MenuController controller;
+  final CardSort sort;
+  final ValueChanged<CardSort> onChanged;
+
+  @override
+  Widget build(BuildContext context) => CupertinoMenuAnchor(
+    controller: controller,
+    menuChildren: [
+      for (final option in CardSort.values)
+        CupertinoMenuItem(
+          // The check mark leads rather than trails because a trailing widget
+          // is dropped at accessibility text sizes, which would leave the menu
+          // with nothing marking the order in force.
+          leading: option == sort
+              ? const Icon(CupertinoIcons.check_mark)
+              : const SizedBox.shrink(),
+          onPressed: () => onChanged(option),
+          child: Text(option.label),
+        ),
+    ],
+    builder: (context, controller, child) => CupertinoButton(
+      padding: EdgeInsets.zero,
+      minimumSize: Size.zero,
+      onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+      child: const Icon(
+        CupertinoIcons.arrow_up_arrow_down,
+        semanticLabel: 'Sort',
+      ),
+    ),
+  );
+}
+
 /// One tappable row.
 ///
 /// The insets are tight on purpose: at the default a 28pt thumbnail sits in a
@@ -169,9 +233,9 @@ class _CardListRow extends StatelessWidget {
     behavior: HitTestBehavior.opaque,
     onTap: onTap,
     child: Padding(
-      // The declared insets are 4pt, but a SwiftUI row also enforces a minimum
-      // height, which puts the real gap at nearer 9. Measured against the
-      // original rather than guessed: without it the rows are 10pt tighter.
+      // 9, not the 4 a platform list row declares: a row also enforces a
+      // minimum height, which puts the real gap nearer 9. Measured rather
+      // than guessed -- without it the rows are 10pt tighter.
       padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
       child: Row(
         children: [

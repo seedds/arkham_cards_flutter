@@ -4,8 +4,7 @@ An offline card reference for Arkham Horror: The Card Game. Browse, search and
 filter all 5,928 cards; open one to see its art; read the ten official starter
 decks or import your own from arkhamdb.
 
-A Flutter port of [the SwiftUI app](../arkhamdb), built with Cupertino widgets
-and matching it screen for screen. iOS, and Android by sideload.
+Flutter, built with Cupertino widgets. iOS, and Android by sideload.
 
 The app shows pictures, not data: the list identifies a card by name, type,
 class, box and number, and the detail screen is card art. Everything else is
@@ -43,8 +42,8 @@ than quietly listing fewer cards than it has.
 flutter run
 ```
 
-The asset script reads the Swift project's `ArkhamCards/Resources/` and writes
-`assets/`. It copies the two JSON files and **transcodes all 7,742 card images
+The asset script reads the two upstream sources and writes `assets/`. It merges
+the card data, derives the starter decks, and **transcodes all 7,742 card images
 from AVIF to WebP**, because Flutter's engine cannot decode AVIF and the one
 package that can offers no decode-time downsampling — which is what keeps this
 app inside its memory budget.
@@ -61,8 +60,8 @@ APK carries the debug keys, and the IPA has no signature at all, so **install
 it by re-signing with Sideloadly or AltStore**.
 
 CI cannot run the asset pipeline — it reads two upstream checkouts that exist
-only on the maintainer's machine — so the transcoded art is published once as a
-release asset and downloaded by each run:
+only on the maintainer's machine — so the transcoded art is published once as
+a release asset and downloaded by each run:
 
 ```sh
 ./tools/publish_assets.sh   # 1.22 GB tarball -> the card-images-v1 release
@@ -75,33 +74,34 @@ changes and what the failures mean.
 
 ## Where the data comes from
 
-`tools/build_assets.py` reads the output of the Swift project's
-`tools/build_bundle.py`, which is the authority on the upstream data. That
-script has already settled the quirks — reprints filled in from the card they
-reprint, the two forms of card back collapsed into one field, the ten promo
-printings linked to the cards they are another edition of — so this port
-re-derives none of it and the two apps cannot disagree.
+Two upstream sources, neither in this repo and neither version-pinned:
 
-See `~/Documents/arkhamdb/docs/DATA.md` for the upstream data in depth. Most of
-both projects' complexity is data quirks, and they are all explained there.
+| Source | Provides |
+| --- | --- |
+| `arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction and type names |
+| `arkham-horror/frontend/public/img/arkham/cards` | 7,947 card images, nearly all AVIF |
 
-## Verifying the port
+`tools/build_assets.py` settles every quirk between them — reprints filled in
+from the card they reprint, the two forms of card back collapsed into one field,
+the ten promo printings linked to the cards they are another edition of, the
+starter decks derived from `xp` — so no view has to carry a special case.
+
+**`docs/DATA.md` is the reference for that data.** Most of this project's
+complexity lives there, not in the app; if a piece of code looks
+over-complicated, the reason is probably on that page.
+
+## Testing
 
 ```sh
-flutter test          # 88 tests against the real bundled data
-./tools/crosscheck.sh # diff the Dart models against the Swift ones
+flutter test    # 94 tests against the real bundled data
+flutter analyze
 ```
 
-The tests are the Swift suite ported: 5,928 records each with a row of its own,
-138 variants in 51 groups, all 10 promo printings linked without their own art
-being overwritten, 10 starter decks of 33 cards but for the two with extra
+Against `assets/` rather than fixtures, because their value is catching a schema
+drift upstream that a fixture would hide: 5,928 records each with a row of its
+own, 138 variants in 51 groups, all 10 promo printings linked without their own
+art being overwritten, 10 starter decks of 33 cards but for the two with extra
 signatures, every bundled filename present and every image a real WebP.
-
-The cross-check is what actually proves the port. It builds the Swift models
-straight out of the original repo, runs the same dump through both
-implementations and diffs them — card order, every printing group, 18 search
-queries, every filter count and all ten decks resolved. 11,873 lines,
-byte-identical.
 
 ## Known gaps
 
@@ -113,10 +113,9 @@ byte-identical.
 ## Layout
 
 ```
+docs/DATA.md                  the upstream data, in depth
 tools/build_assets.py         asset pipeline, run by hand
 tools/publish_assets.sh       upload the art to a release, for CI to fetch
-tools/crosscheck.sh           diff the Dart models against the Swift ones
-tools/dump_dart.dart          one half of that diff
 lib/models/                   pure Dart, no Flutter imports
   card.dart                   the card record, and the CardValue sentinels
   card_database.dart          loading, indexing, search, printing groups
@@ -126,7 +125,7 @@ lib/models/                   pure Dart, no Flutter imports
   deck_store.dart             the starters, the imported decks and their file
   arkhamdb_client.dart        the one network call
 lib/views/                    Cupertino, one file per screen
-test/                         88 tests, against the real bundled data
+test/                         94 tests, against the real bundled data
 .github/workflows/build.yml   APK and unsigned IPA, on a tag or on demand
 .github/fetch-images.sh       unpacks the release art onto a runner
 RELEASING.md                  how to publish the art and cut a build

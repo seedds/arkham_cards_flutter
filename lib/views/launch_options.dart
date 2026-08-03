@@ -1,3 +1,5 @@
+import '../models/card_query.dart';
+
 /// Which screen to open on, named at launch.
 ///
 /// Driving the app by synthesised taps does not work: the tab bar and list rows
@@ -11,8 +13,18 @@ abstract final class LaunchOptions {
   /// `cards`, `decks` or `settings`. Anything else opens the cards tab.
   static const tab = String.fromEnvironment('ARKHAM_TAB');
 
-  /// `import` opens the deck import sheet; `filter` opens the filter sheet.
+  /// `import` opens the deck import sheet, `filter` the filter sheet, and
+  /// `sort` the cards tab's sort menu.
   static const sheet = String.fromEnvironment('ARKHAM_SHEET');
+
+  /// A [CardSort] name, so `name`. Sorts the cards tab at launch.
+  static const sort = String.fromEnvironment('ARKHAM_SORT');
+
+  /// [sort] resolved, falling back to the default for an unknown name.
+  static CardSort get sortOrder => CardSort.values.firstWhere(
+    (order) => order.name == sort,
+    orElse: () => CardSort.release,
+  );
 
   /// Fills the import sheet in and submits it, fetching for real.
   static const importID = String.fromEnvironment('ARKHAM_IMPORT_ID');

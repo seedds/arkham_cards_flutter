@@ -46,8 +46,7 @@ class CardImageView extends StatelessWidget {
       borderRadius: radius,
       child: Image(
         // Both dimensions with `fit`, so the longest edge lands on maxPixels
-        // and the aspect ratio is kept -- the same rule as the Swift app's
-        // thumbnail decode. The cache key includes the size, so a card shown
+        // and the aspect ratio is kept. The cache key includes the size, so a card shown
         // in a row and on the detail screen is two entries, not one fought
         // over.
         image: ResizeImage(

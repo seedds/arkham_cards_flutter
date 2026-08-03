@@ -11,6 +11,21 @@ enum DeckKind {
   final String label;
 }
 
+/// The order the browse list reads in.
+///
+/// Separate from [CardQuery] because that answers which cards and this answers
+/// in what order: a sort hides nothing, so it must not count towards
+/// [CardQuery.activeFilterCount] or be undone by [CardQuery.cleared].
+enum CardSort {
+  /// The order the boxes shipped, which is the order the bundle is written in.
+  release('Release Order'),
+  name('Name');
+
+  const CardSort(this.label);
+
+  final String label;
+}
+
 /// What the user is filtering by.
 ///
 /// Every field defaults to no opinion, so a fresh query matches every card.

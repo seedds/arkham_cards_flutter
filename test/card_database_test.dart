@@ -130,9 +130,9 @@ void main() {
         matches('SHOTGUN').map((card) => card.code).toList(),
         matches('shotgun').map((card) => card.code).toList(),
       );
-      // The Swift original folded with Foundation, which strips a combining
-      // mark but leaves a ligature alone. Both halves are pinned so the hand
-      // written fold here cannot drift from it in either direction.
+      // The fold strips a combining mark but leaves a ligature alone. Both
+      // halves are pinned, so the hand-written table cannot drift in either
+      // direction -- into transliterating `œ`, or out of stripping accents.
       expect(CardDatabase.fold('Luís'), 'luis');
       expect(CardDatabase.fold('André'), 'andre');
       expect(CardDatabase.fold('Chœur'), 'chœur');
@@ -225,6 +225,90 @@ void main() {
       expect(Card.readValue(const {'shroud': null}, 'shroud'),
           const CardDash());
       expect(Card.readValue(const {'shroud': 2}, 'shroud'), const CardNumber(2));
+    });
+  });
+
+  group('sorting', () {
+    List<Card> sorted([CardQuery query = const CardQuery()]) =>
+        database.cards(query, sort: CardSort.name);
+
+    test('the default is the bundled order, untouched', () {
+      // The cycle list is derived by walking `all`, so sorting must be opt-in.
+      final bundled = database.all.map((card) => card.code);
+      expect(
+        database.cards(const CardQuery()).map((card) => card.code),
+        orderedEquals(bundled),
+      );
+      expect(
+        database
+            .cards(const CardQuery(), sort: CardSort.release)
+            .map((card) => card.code),
+        orderedEquals(bundled),
+      );
+    });
+
+    test('an accent sorts under its base letter', () {
+      // Dart compares code units, so a raw compare puts the two `Zócalo`
+      // (U+00F3) after `Zulan-Thek` and at the very end of the list.
+      final names = sorted().map((card) => card.name).toList();
+      final zocalo = names.indexOf('Zócalo');
+      expect(zocalo, greaterThan(-1));
+      expect(names.indexOf('Zoog Burrow'), greaterThan(zocalo));
+      expect(names.last, isNot('Zócalo'));
+    });
+
+    test('case does not decide the order', () {
+      // Folding lowercases, so the sort is the one the search field implies.
+      // A raw compare puts `Abandoned Camp` first, because `C` is 0x43 and the
+      // `a` of `and` is 0x61.
+      final names = sorted().map((card) => card.name).toList();
+      expect(
+        names.indexOf('Abandoned and Alone'),
+        lessThan(names.indexOf('Abandoned Camp')),
+      );
+
+      // And the whole list is non-decreasing on the folded name, not just
+      // that pair.
+      final folded = [for (final name in names) CardDatabase.fold(name)];
+      expect(folded, orderedEquals([...folded]..sort()));
+    });
+
+    test('same-named cards fall into release order', () {
+      // Six `Heretic` share a sort key in The Wages of Sin and two more are
+      // reprinted in a later box; the later box must come last.
+      final heretics = [
+        for (final card in sorted())
+          if (card.name == 'Heretic') card.code,
+      ];
+      expect(heretics, [
+        '05178a', '05178c', '05178e', '05178g', '05178i', '05178k',
+        '54038', '54039',
+      ]);
+    });
+
+    test('the order is total, so it does not depend on the input order', () {
+      // `List.sort` is unstable and hundreds of cards share a name, so without
+      // a tiebreak the same query could come out two different ways.
+      final forwards = sorted().map((card) => card.code).toList();
+      final backwards = database.all.reversed.toList();
+      final again = CardDatabase(backwards)
+          .cards(const CardQuery(), sort: CardSort.name)
+          .map((card) => card.code)
+          .toList();
+      expect(again, forwards);
+    });
+
+    test('sorting reorders a result without changing what is in it', () {
+      const query = CardQuery(factions: {'mystic'}, types: {'asset'});
+      final byRelease = database.cards(query);
+      final byName = database.cards(query, sort: CardSort.name);
+      expect(byName.length, byRelease.length);
+      expect(
+        byName.map((card) => card.code).toSet(),
+        byRelease.map((card) => card.code).toSet(),
+      );
+      // The count is order-independent, so the filter sheet is unaffected.
+      expect(database.count(query), byName.length);
     });
   });
 

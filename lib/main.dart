@@ -17,10 +17,10 @@ void main() {
   // thumbnail costs at most 0.11 MB decoded and a 1200px detail image 5.8 MB,
   // so 420 rows and a handful of open cards need about 100 MB between them.
   //
-  // The Swift app kept thumbnails and full-size art in separate caches so that
-  // opening one card could not evict a screenful of rows. Flutter's cache is a
-  // single LRU, so that guarantee is not expressible here; a budget this far
-  // above the row working set is what stands in for it. Raising it to 288 MB
+  // Thumbnails and full-size art cannot be kept apart: Flutter's cache is a
+  // single LRU, so there is no way to stop one opened card evicting a
+  // screenful of rows. A budget this far above the row working set is what
+  // stands in for that guarantee. Raising it to 288 MB
   // was measured to make no difference to the footprint at rest, so the
   // smaller number is the honest one.
   PaintingBinding.instance.imageCache

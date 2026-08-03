@@ -1,12 +1,11 @@
 #!/bin/sh
 # Attach the transcoded card art to a GitHub Release, so CI can build without it.
 #
-# The images cannot be rebuilt on a runner: tools/build_assets.py reads the
-# Swift project's Resources, which are themselves built from two upstream
-# checkouts that live only on this machine. So the transcoded WebPs are what
-# has to travel, and a release asset is the only place on GitHub that holds
-# 1.12 GiB without metering storage or bandwidth. assets/CardImages/ stays
-# gitignored and the repository stays 2 MB.
+# The images cannot be rebuilt on a runner: tools/build_assets.py reads two
+# upstream checkouts, ~1 GB between them, that live only on this machine. So
+# the transcoded WebPs are what has to travel, and a release asset is the only
+# place on GitHub that holds 1.12 GiB without metering storage or bandwidth.
+# assets/CardImages/ stays gitignored and the repository stays 2 MB.
 #
 # Run after tools/build_assets.py changes what it writes, bumping TAG.
 set -eu

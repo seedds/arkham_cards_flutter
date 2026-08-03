@@ -54,8 +54,8 @@ class Cycle {
 class CardDatabase {
   CardDatabase(List<Card> cards) : all = List.unmodifiable(cards) {
     for (final card in cards) {
-      // First wins, matching the Swift original. No two records share a code
-      // in the bundled data, so this only decides a case that cannot arise.
+      // First wins. No two records share a code in the bundled data, so this
+      // only decides a case that cannot arise.
       _byCode.putIfAbsent(card.code, () => card);
       _searchText.putIfAbsent(card.code, () => fold(card.name));
     }
@@ -130,13 +130,38 @@ class CardDatabase {
     return _printingsByRoot[root] ?? [card];
   }
 
-  /// Cards matching a query, in bundled order.
-  List<Card> cards(CardQuery query) {
+  /// Cards matching a query, in bundled order unless another is asked for.
+  ///
+  /// The sort is applied to the result rather than to [all], which stays in
+  /// the order the build script wrote: the cycle list is derived by walking it.
+  List<Card> cards(CardQuery query, {CardSort sort = CardSort.release}) {
     final match = _matcher(query);
-    return [
+    final results = [
       for (final card in all)
         if (match(card)) card,
     ];
+    if (sort == CardSort.name) results.sort(_compareNames);
+    return results;
+  }
+
+  /// Alphabetical by the folded name, ties broken by release order then code.
+  ///
+  /// Folded because Dart compares code units, which puts every accented name
+  /// after `Zoey`, and because folding lowercases -- so this is the same
+  /// ordering the search field already implies. The name is read from the
+  /// index built at construction rather than folded again per comparison.
+  ///
+  /// The tiebreak is not decoration: `List.sort` is unstable, and hundreds of
+  /// cards share a name -- six `Heretic`, every reprint. Ties go to release
+  /// order so a card's versions cluster the way `printings` returns them.
+  ///
+  /// `DeckContents` sorts on the raw name instead, which is a deliberately
+  /// separate rule: a deck's sections are short and read as printed.
+  int _compareNames(Card left, Card right) {
+    final order = _searchText[left.code]!.compareTo(_searchText[right.code]!);
+    if (order != 0) return order;
+    final byRelease = _compareSortKeys(left.sortKey, right.sortKey);
+    return byRelease != 0 ? byRelease : left.code.compareTo(right.code);
   }
 
   /// How many cards a query matches.
@@ -238,10 +263,10 @@ class CardDatabase {
 
   /// Lowercased and stripped of accents, so "Luís" is found by typing "luis".
   ///
-  /// This is Foundation's `.diacriticInsensitive, .caseInsensitive` folding as
-  /// the Swift app used it, which decomposes and drops combining marks but
-  /// leaves a ligature alone: `Chœur Gothique` is not found by typing "choeur"
-  /// there and is not here either.
+  /// Decomposes and drops combining marks, but leaves a ligature alone --
+  /// so `Chœur Gothique` is not found by typing "choeur". That is the same
+  /// boundary a platform diacritic-insensitive fold draws, and the reason the
+  /// table below is a decomposition rather than a transliteration.
   static String fold(String text) {
     final decomposed = _decompose(text);
     final buffer = StringBuffer();

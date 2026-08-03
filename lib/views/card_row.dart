@@ -53,10 +53,9 @@ class CardRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 15,
-                // The line heights are the system's, which SwiftUI's
-                // .subheadline and .caption2 carry and a bare font size does
-                // not: without them the two lines crowd together and the row
-                // stands 12pt shorter than the original.
+                // The line height is the system's for this size, which a bare
+                // fontSize does not carry: without it the two lines crowd
+                // together and the row stands 12pt shorter. Measured.
                 height: 20 / 15,
                 color: CupertinoColors.label.resolveFrom(context),
               ),

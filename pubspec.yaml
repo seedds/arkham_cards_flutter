@@ -18,7 +18,7 @@ dependencies:
   # The theme preference, and nothing else.
   shared_preferences: ^2.3.4
   # Swipe-to-delete that reveals a button. Cupertino has no equivalent, and
-  # Dismissible only does the full-swipe half of what SwiftUI's swipeActions do.
+  # Dismissible only does the full-swipe half of it.
   flutter_slidable: ^4.0.0
 
 dev_dependencies:

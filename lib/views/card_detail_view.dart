@@ -12,13 +12,12 @@ import 'card_row.dart';
 /// next card in the order just read. The navigation bar is hidden: the art is
 /// the subject, and 44pt of chrome was spent naming a card the picture names.
 ///
-/// That leaves the edge swipe as the only way back, and the Swift app had to
-/// hand-roll a recogniser to keep it -- UIKit disables the swipe along with the
-/// bar, and the pager ate the touches that were left. Flutter needs none of
-/// that: `CupertinoPageRoute`'s own back gesture already beats a full-width
+/// That leaves the edge swipe as the only way back, and it needs no help:
+/// `CupertinoPageRoute`'s own back gesture already beats a full-width
 /// `PageView` in the arena, including mid-pager where the drag is ambiguous.
-/// Pinned by `test/card_detail_gesture_test.dart`, because an added edge
-/// widget could quietly take it away again.
+/// A hand-rolled edge recogniser was written for this and measured to be
+/// unnecessary. Pinned by `test/card_detail_gesture_test.dart`, because an
+/// added edge widget could quietly take it away again.
 class CardDetailView extends StatefulWidget {
   const CardDetailView({
     required this.card,
