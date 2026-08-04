@@ -74,7 +74,7 @@ git tag v1.0.0 && git push origin v1.0.0
 There is no build on ordinary pushes. Each run moves several GB, which is not
 worth spending on every commit.
 
-Both jobs fetch the art, count it, then run `flutter analyze` and the 94 tests
+Both jobs fetch the art, count it, then run `flutter analyze` and the 112 tests
 before building. `test/card_images_test.dart` checks every filename in
 `cards.json` resolves and every file is really a WebP, so it doubles as the
 integrity check on the transfer.

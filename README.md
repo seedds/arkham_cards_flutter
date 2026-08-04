@@ -94,7 +94,7 @@ over-complicated, the reason is probably on that page.
 ## Testing
 
 ```sh
-flutter test    # 94 tests against the real bundled data
+flutter test    # 112 tests against the real bundled data
 flutter analyze
 ```
 
@@ -126,7 +126,7 @@ lib/models/                   pure Dart, no Flutter imports
   deck_store.dart             the starters, the imported decks and their file
   arkhamdb_client.dart        the one network call
 lib/views/                    Cupertino, one file per screen
-test/                         94 tests, against the real bundled data
+test/                         112 tests, against the real bundled data
 .github/workflows/build.yml   APK and unsigned IPA, on a tag or on demand
 .github/fetch-images.sh       unpacks the release art onto a runner
 RELEASING.md                  how to publish the art and cut a build

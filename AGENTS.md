@@ -8,7 +8,7 @@ rather than in the code.
 ## Commands
 
 ```sh
-flutter test                      # 94 tests, ~2s, against the real bundled data
+flutter test                      # 112 tests, ~2s, against the real bundled data
 flutter analyze
 
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
