@@ -34,10 +34,7 @@ class DeckDetailView extends StatelessWidget {
                 // "33 cards" rather than a bare 33: under this header a bare
                 // number would read as a count of investigators. Nothing else
                 // on screen gives the deck's total.
-                header: _Header(
-                  title: 'Investigator',
-                  trailing: '${contents.cardCount} cards',
-                ),
+                header: Text('Investigator (${contents.cardCount} cards)'),
                 children: [
                   _row(
                     context,
@@ -49,10 +46,7 @@ class DeckDetailView extends StatelessWidget {
               ),
             for (final section in contents.sections)
               CupertinoListSection.insetGrouped(
-                header: _Header(
-                  title: section.title,
-                  trailing: '${section.cardCount}',
-                ),
+                header: Text('${section.title} (${section.cardCount})'),
                 children: [
                   for (final entry in section.entries)
                     _row(
@@ -65,9 +59,8 @@ class DeckDetailView extends StatelessWidget {
               ),
             for (final section in contents.sideSections)
               CupertinoListSection.insetGrouped(
-                header: _Header(
-                  title: 'Side Deck \u00b7 ${section.title}',
-                  trailing: '${section.cardCount}',
+                header: Text(
+                  'Side Deck \u00b7 ${section.title} (${section.cardCount})',
                 ),
                 children: [
                   for (final entry in section.entries)
@@ -126,22 +119,6 @@ class DeckDetailView extends StatelessWidget {
         Expanded(child: CardRow(card: card)),
       ],
     ),
-  );
-}
-
-/// A section header with a count on the right.
-class _Header extends StatelessWidget {
-  const _Header({required this.title, required this.trailing});
-
-  final String title;
-  final String trailing;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(child: Text(title)),
-      Text(trailing),
-    ],
   );
 }
 
