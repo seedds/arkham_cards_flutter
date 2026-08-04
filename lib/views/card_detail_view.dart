@@ -9,15 +9,20 @@ import 'card_row.dart';
 /// One card's art, and its other versions underneath.
 ///
 /// Pages sideways through the list it was opened from, so a swipe moves to the
-/// next card in the order just read. The navigation bar is hidden: the art is
-/// the subject, and 44pt of chrome was spent naming a card the picture names.
+/// next card in the order just read. The bar's title follows the pager, which is
+/// the one thing on this screen that names the 27 cards holding no art.
 ///
-/// That leaves the edge swipe as the only way back, and it needs no help:
-/// `CupertinoPageRoute`'s own back gesture already beats a full-width
-/// `PageView` in the arena, including mid-pager where the drag is ambiguous.
-/// A hand-rolled edge recogniser was written for this and measured to be
-/// unnecessary. Pinned by `test/card_detail_gesture_test.dart`, because an
-/// added edge widget could quietly take it away again.
+/// The bar costs 44pt of the art. On a 6.3-inch screen a portrait card still
+/// gets the 505pt it wants; on a 4.7-inch one the height clamp in `_CardPage`
+/// starts biting and it gets 449 of the 480 it asks for. Measured, and accepted:
+/// a screen with no visible way off it is worse than a card 31pt shorter.
+///
+/// The edge swipe still works and is still worth pinning. The bar's button is an
+/// addition, not a replacement: `CupertinoPageRoute`'s own back gesture beats a
+/// full-width `PageView` in the arena, including mid-pager where the drag is
+/// ambiguous, and a hand-rolled edge recogniser written for this was measured to
+/// be unnecessary. `test/card_detail_gesture_test.dart` pins both ways back,
+/// because an added edge widget could quietly take the swipe away again.
 class CardDetailView extends StatefulWidget {
   const CardDetailView({
     required this.card,
@@ -38,6 +43,11 @@ class _CardDetailViewState extends State<CardDetailView> {
   late final List<model.Card> _sequence;
   late final PageController _controller;
 
+  /// Which card the bar is naming. Held here rather than read from the
+  /// controller because `page` is a double mid-drag and null before first
+  /// layout, and the title should change once, on arrival.
+  late int _index;
+
   @override
   void initState() {
     super.initState();
@@ -45,9 +55,8 @@ class _CardDetailViewState extends State<CardDetailView> {
     _sequence = widget.cards.contains(widget.card)
         ? widget.cards
         : [widget.card];
-    _controller = PageController(
-      initialPage: _sequence.indexOf(widget.card).clamp(0, _sequence.length - 1),
-    );
+    _index = _sequence.indexOf(widget.card).clamp(0, _sequence.length - 1);
+    _controller = PageController(initialPage: _index);
   }
 
   @override
@@ -59,9 +68,23 @@ class _CardDetailViewState extends State<CardDetailView> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
     backgroundColor: CupertinoColors.systemBackground.resolveFrom(context),
+    // The leading chevron is implied, and comes out bare: neither route that
+    // pushes this screen sets a `title`, so Flutter has no previous page to
+    // name and draws the chevron alone.
+    navigationBar: CupertinoNavigationBar(
+      // Ellipsised because the toolbar will not shrink it and the longest name
+      // runs to 46 characters ("Return to Disappearance at the Twilight
+      // Estate").
+      middle: Text(
+        _sequence[_index].name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ),
     child: SafeArea(
       child: PageView.builder(
         controller: _controller,
+        onPageChanged: (index) => setState(() => _index = index),
         // Lazy on purpose: a cleared filter is 5,928 pages, each decoding art
         // at about screen width.
         itemCount: _sequence.length,
