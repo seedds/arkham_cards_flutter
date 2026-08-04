@@ -36,6 +36,16 @@ class MainTabView extends StatelessWidget {
   Widget build(BuildContext context) => CupertinoTabScaffold(
     controller: CupertinoTabController(initialIndex: _initialTab),
     tabBar: CupertinoTabBar(
+      // Ten above the stock 50, because at 50 the icons sit 2pt under the top
+      // hairline and the whole cluster reads as pinned to it. The extra all
+      // lands above the icon: a tab item is a column of an Expanded icon over
+      // the label, so the icon takes every bit of slack and the label stays
+      // 4pt above the bottom inset wherever the top edge goes.
+      //
+      // The 34pt below the label is the home indicator's safe area, which the
+      // bar pads out but must not draw into, so the cluster still sits high in
+      // the painted box by design. That gap is not something to tune away.
+      height: 60,
       items: const [
         BottomNavigationBarItem(
           icon: Icon(CupertinoIcons.square_stack),

@@ -28,11 +28,11 @@ void main() {
 
   tearDown(() => temporary.deleteSync(recursive: true));
 
-  /// The tab bar is not built here, so its 50pt is supplied the way
+  /// The tab bar is not built here, so its 60pt is supplied the way
   /// CupertinoTabScaffold supplies it: as a padding hint the content is
   /// expected to honour itself.
   Future<void> pump(WidgetTester tester) async {
-    // An iPhone 17 Pro: 402x874 logical, with the tab bar's 50pt and the home
+    // An iPhone 17 Pro: 402x874 logical, with the tab bar's 60pt and the home
     // indicator's 34 reported together as CupertinoTabScaffold reports them.
     tester.view.physicalSize = const Size(402 * 3, 874 * 3);
     tester.view.devicePixelRatio = 3;
@@ -41,7 +41,7 @@ void main() {
     await tester.pumpWidget(
       CupertinoApp(
         home: MediaQuery(
-          data: const MediaQueryData(padding: EdgeInsets.only(bottom: 84)),
+          data: const MediaQueryData(padding: EdgeInsets.only(bottom: 94)),
           child: DecksView(database: database, store: store),
         ),
       ),
@@ -131,6 +131,6 @@ void main() {
     final gap =
         tester.getSize(find.byType(DecksView)).height -
         tester.getBottomLeft(find.byType(CupertinoListSection).last).dy;
-    expect(gap, greaterThanOrEqualTo(84));
+    expect(gap, greaterThanOrEqualTo(94));
   });
 }
