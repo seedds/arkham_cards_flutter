@@ -264,9 +264,24 @@ Following reprint codes back to the card they reprint, the derivation matches
 all five exactly. `build_decks` additionally refuses to emit a deck outside
 30–40 cards, so a change in the `xp` convention fails the build.
 
-That app also carries 34 more decks — the suggested decklists printed on the
-Core, Dunwich and Carcosa box inserts. Those exist in no machine-readable
-source, so they are not included here.
+**Every investigator does not have one.** That app's file holds 42 decks, of
+which only those five are these products; the other 37 are the suggested
+decklists printed on box inserts, covering the investigators of cycles 01–07
+(Core through Innsmouth). Roland Banks is one of them — he has an insert
+decklist, not a Starter Deck product.
+
+Those 37 are not included here, and the reason is not that they would not
+work: all 37 resolve against the bundle and every card in them has bundled
+art. They are excluded because they are hand-curated by that project rather
+than derived from anything, and `zzorba/ArkhamCards` carries no LICENSE file.
+Using it to *check* a derivation is a different thing from vendoring its data.
+
+Two further consequences if that is ever revisited. The roster would still be
+short by 38 of the 85 original investigators — everything from Edge of the
+Earth on (`eoe`, `tsk`, `fhv`, `tdc`), the five Core Set (2026) ones, the four
+campaign-only TCU investigators, `Body of a Yithian` and `Subject 5U-21`. And
+the 37 run 32–45 cards, so the tidy 33 that `DECK_SIZE_RANGE` guards stops
+describing the decks tab.
 
 ### 8. Two records are defined twice
 
