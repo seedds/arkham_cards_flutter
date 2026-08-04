@@ -23,6 +23,16 @@ import 'card_row.dart';
 /// ambiguous, and a hand-rolled edge recogniser written for this was measured to
 /// be unnecessary. `test/card_detail_gesture_test.dart` pins both ways back,
 /// because an added edge widget could quietly take the swipe away again.
+///
+/// The trailing flip button is the same shape of addition: a tap on the art
+/// turns the card over too, and neither way is the only one.
+/// `test/card_detail_flip_test.dart` pins both.
+///
+/// Which side is showing is held here rather than down in `_PrintingView`,
+/// because the bar's button has to drive it from three levels up. `hasBack`
+/// never differs between a card's printings -- checked against all 5,928 -- so
+/// the button's presence is decided by the paged card alone and does not depend
+/// on which version the page has selected.
 class CardDetailView extends StatefulWidget {
   const CardDetailView({
     required this.card,
@@ -47,6 +57,9 @@ class _CardDetailViewState extends State<CardDetailView> {
   /// controller because `page` is a double mid-drag and null before first
   /// layout, and the title should change once, on arrival.
   late int _index;
+
+  /// Whether the card on show is turned over.
+  var _showingBack = false;
 
   @override
   void initState() {
@@ -80,11 +93,33 @@ class _CardDetailViewState extends State<CardDetailView> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+      // Absent on the 3,691 one-sided cards, so the centred title's available
+      // width changes as you page and a long name can gain or lose a character.
+      // Accepted: a disabled control on 62% of cards is the worse trade.
+      trailing: _sequence[_index].hasBack
+          ? CupertinoButton(
+              // Metrics as the cards list's Filter button, so the bar's
+              // toolbar row is the same height here as there.
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              onPressed: () => setState(() => _showingBack = !_showingBack),
+              child: const Icon(
+                CupertinoIcons.arrow_2_squarepath,
+                semanticLabel: 'Turn the card over',
+              ),
+            )
+          : null,
     ),
     child: SafeArea(
       child: PageView.builder(
         controller: _controller,
-        onPageChanged: (index) => setState(() => _index = index),
+        // Arriving at a card shows its front. Load-bearing, not tidiness: one
+        // flag now serves every page, so without this a swipe off a turned-over
+        // card lands on the next card's back.
+        onPageChanged: (index) => setState(() {
+          _index = index;
+          _showingBack = false;
+        }),
         // Lazy on purpose: a cleared filter is 5,928 pages, each decoding art
         // at about screen width.
         itemCount: _sequence.length,
@@ -92,6 +127,9 @@ class _CardDetailViewState extends State<CardDetailView> {
           key: ValueKey(_sequence[index].code),
           card: _sequence[index],
           database: widget.database,
+          showingBack: _showingBack,
+          onShowingBackChanged: (showingBack) =>
+              setState(() => _showingBack = showingBack),
         ),
       ),
     ),
@@ -100,10 +138,18 @@ class _CardDetailViewState extends State<CardDetailView> {
 
 /// One page: a card's art, with a picker for its other versions.
 class _CardPage extends StatefulWidget {
-  const _CardPage({required this.card, required this.database, super.key});
+  const _CardPage({
+    required this.card,
+    required this.database,
+    required this.showingBack,
+    required this.onShowingBackChanged,
+    super.key,
+  });
 
   final model.Card card;
   final CardDatabase database;
+  final bool showingBack;
+  final ValueChanged<bool> onShowingBackChanged;
 
   @override
   State<_CardPage> createState() => _CardPageState();
@@ -147,7 +193,11 @@ class _CardPageState extends State<_CardPage> {
               // card would want more than the whole screen and leave the rows
               // nothing.
               height: (width * aspect).clamp(0.0, available - reserved),
-              child: _PrintingView(printing: _selected),
+              child: _PrintingView(
+                printing: _selected,
+                showingBack: widget.showingBack,
+                onFlip: () => widget.onShowingBackChanged(!widget.showingBack),
+              ),
             ),
             if (hasVersions) ...[
               const SizedBox(height: 8),
@@ -178,7 +228,12 @@ class _CardPageState extends State<_CardPage> {
       final isSelected = printing == _selected;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selected = printing),
+        // Choosing a version shows its front, not the side the last one
+        // happened to be turned to.
+        onTap: () {
+          setState(() => _selected = printing);
+          widget.onShowingBackChanged(false);
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
@@ -198,46 +253,37 @@ class _CardPageState extends State<_CardPage> {
   );
 }
 
-/// One printing, turned over by a tap.
-class _PrintingView extends StatefulWidget {
-  const _PrintingView({required this.printing});
+/// One printing, turned over by a tap on the art or by the bar's flip button.
+///
+/// Which side is showing belongs to the screen, not here: the bar's button
+/// drives the same flag from outside this widget.
+class _PrintingView extends StatelessWidget {
+  const _PrintingView({
+    required this.printing,
+    required this.showingBack,
+    required this.onFlip,
+  });
 
   /// Roughly screen width. Beyond this only costs memory, and a five-printing
   /// card would decode five of them.
   static const maxPixels = 1200;
 
   final model.Card printing;
-
-  @override
-  State<_PrintingView> createState() => _PrintingViewState();
-}
-
-class _PrintingViewState extends State<_PrintingView> {
-  var _showingBack = false;
-
-  @override
-  void didUpdateWidget(_PrintingView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Choosing another version shows its front, not the side the last one
-    // happened to be turned to.
-    if (oldWidget.printing != widget.printing) _showingBack = false;
-  }
+  final bool showingBack;
+  final VoidCallback onFlip;
 
   @override
   Widget build(BuildContext context) {
-    final printing = widget.printing;
-    final filename = _showingBack ? printing.backImage : printing.frontImage;
+    final filename = showingBack ? printing.backImage : printing.frontImage;
     // A back that exists in the data but not as a picture stands in as text.
     // Only ever the back: a front is a picture or nothing.
-    final backText = _showingBack && printing.backImage == null
+    final backText = showingBack && printing.backImage == null
         ? printing.backText
         : null;
 
     return GestureDetector(
       // A one-sided card ignores taps entirely.
-      onTap: printing.hasBack
-          ? () => setState(() => _showingBack = !_showingBack)
-          : null,
+      onTap: printing.hasBack ? onFlip : null,
       child: Semantics(
         button: printing.hasBack,
         hint: printing.hasBack ? 'Tap to turn the card over' : null,

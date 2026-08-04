@@ -8,10 +8,11 @@ Flutter, built with Cupertino widgets. iOS, and Android by sideload.
 
 The app shows pictures, not data: the list identifies a card by name, type,
 class, box and number, and the detail screen is card art. Everything else is
-printed on the card itself. Tapping a two-sided card turns it over, and that is
-the only thing a tap does — a one-sided card does not respond. The exception is
-16 cards whose back exists in the data but not as a picture; they flip to the
-back's text instead.
+printed on the card itself. A two-sided card turns over either by a tap on the
+art or by the flip button at the right of the navigation bar, and turning over is
+the only thing a tap does — a one-sided card does not respond, and shows no flip
+button. The exception is 16 cards whose back exists in the data but not as a
+picture; they flip to the back's text instead.
 
 Three tabs: Cards, Decks and Settings. The filter is a sheet over the Cards tab,
 carrying a live result count. Settings holds one setting, the light/dark/system
