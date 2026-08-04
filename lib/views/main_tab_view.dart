@@ -57,6 +57,7 @@ class MainTabView extends StatelessWidget {
         1 => DecksView(database: database, store: deckStore),
         _ => SettingsView(
           database: database,
+          deckStore: deckStore,
           themeController: themeController,
         ),
       },

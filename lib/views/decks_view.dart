@@ -66,6 +66,7 @@ class _DecksViewState extends State<DecksView> {
   @override
   Widget build(BuildContext context) {
     final imported = widget.store.imported;
+    final starters = widget.store.starters;
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
@@ -85,46 +86,61 @@ class _DecksViewState extends State<DecksView> {
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: CupertinoListSection.insetGrouped(
-              header: const Text('Starter Decks'),
-              children: [
-                for (final deck in widget.store.starters) _row(deck),
-              ],
-            ),
-          ),
+          // Imported first: they are the decks the user chose to keep, and the
+          // ten starters are always there underneath.
+          //
           // Hidden entirely when empty: an "Imported" header over nothing
           // invites the question of what is missing.
           if (imported.isNotEmpty)
             SliverToBoxAdapter(
               child: CupertinoListSection.insetGrouped(
                 header: const Text('Imported'),
-                children: [
-                  for (final deck in imported)
-                    Slidable(
-                      key: ValueKey(deck.id),
-                      endActionPane: ActionPane(
-                        motion: const DrawerMotion(),
-                        extentRatio: 0.25,
-                        children: [
-                          SlidableAction(
-                            onPressed: (_) => widget.store.remove(deck),
-                            backgroundColor: CupertinoColors.destructiveRed,
-                            foregroundColor: CupertinoColors.white,
-                            label: 'Delete',
-                          ),
-                        ],
-                      ),
-                      child: _row(deck),
-                    ),
-                ],
+                children: [for (final deck in imported) _deletableRow(deck)],
               ),
             ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
+          if (starters.isNotEmpty)
+            SliverToBoxAdapter(
+              child: CupertinoListSection.insetGrouped(
+                header: const Text('Starter Decks'),
+                children: [for (final deck in starters) _deletableRow(deck)],
+              ),
+            ),
+          SliverPadding(
+            // The tab bar is translucent, so CupertinoTabScaffold reports its
+            // 50pt as a MediaQuery padding hint rather than insetting the
+            // content. A BoxScrollView consumes that hint; a CustomScrollView
+            // does not, so without this the last row sits under the bar.
+            padding: EdgeInsets.only(
+              bottom: 24 + MediaQuery.paddingOf(context).bottom,
+            ),
+          ),
         ],
       ),
     );
   }
+
+  /// A row that swipes to reveal Delete.
+  ///
+  /// Both sections use it. Deleting a starter only hides it -- Settings has a
+  /// row that brings them all back -- so the same red button means something
+  /// weaker there than it does over an import, which is the one thing here
+  /// that is not reversible.
+  Widget _deletableRow(Deck deck) => Slidable(
+    key: ValueKey(deck.id),
+    endActionPane: ActionPane(
+      motion: const DrawerMotion(),
+      extentRatio: 0.25,
+      children: [
+        SlidableAction(
+          onPressed: (_) => widget.store.remove(deck),
+          backgroundColor: CupertinoColors.destructiveRed,
+          foregroundColor: CupertinoColors.white,
+          label: 'Delete',
+        ),
+      ],
+    ),
+    child: _row(deck),
+  );
 
   Widget _row(Deck deck) => CupertinoListTile.notched(
     onTap: () => _open(deck),

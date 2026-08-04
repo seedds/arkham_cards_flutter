@@ -21,10 +21,11 @@ class DeckStore extends ChangeNotifier {
   /// over the same file see the first one's decks, which is the whole of what
   /// persistence means to this app.
   DeckStore({
-    required this.starters,
+    required List<Deck> starters,
     required this.storeFile,
     this.client = const ArkhamDBClient(),
-  }) : _imported = _read(storeFile);
+  }) : _allStarters = starters,
+       _held = _read(storeFile);
 
   /// Reads the store file, and the starters from the bundled `decks.json`.
   static Future<DeckStore> load({
@@ -63,8 +64,9 @@ class DeckStore extends ChangeNotifier {
     }
   }
 
-  /// The 10 Investigator Starter Decks. Fixed, and in release order.
-  final List<Deck> starters;
+  /// The 10 Investigator Starter Decks as bundled, including any the user has
+  /// since deleted. [starters] is the list to show.
+  final List<Deck> _allStarters;
 
   /// Where the imported decks are kept. Null if Application Support could not
   /// be reached, in which case they last only as long as the process.
@@ -72,10 +74,25 @@ class DeckStore extends ChangeNotifier {
 
   /// Injectable so the tests can import a deck without a network.
   final ArkhamDBClient client;
-  final List<Deck> _imported;
+  final _Held _held;
+
+  List<Deck> get _imported => _held.imported;
 
   /// Imported decks, most recently added last.
   List<Deck> get imported => List.unmodifiable(_imported);
+
+  /// The starter decks still on show, in bundled order.
+  ///
+  /// Derived on each read rather than stored, so restoring one puts it back
+  /// where it was published rather than at the end.
+  List<Deck> get starters => [
+    for (final deck in _allStarters)
+      if (!_held.hiddenStarters.contains(deck.id)) deck,
+  ];
+
+  /// How many starters the user has deleted. Drives the Settings row that
+  /// brings them back, which is the only route to undoing a deletion.
+  int get hiddenStarterCount => _held.hiddenStarters.length;
 
   /// Fetch a published decklist and keep it.
   Future<Deck> importDecklist(int id) async {
@@ -100,26 +117,53 @@ class DeckStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drop an imported deck, or hide a starter.
+  ///
+  /// A starter is bundled and cannot be deleted in any real sense, so it is
+  /// recorded as hidden instead. That is what makes it restorable, and the
+  /// Settings row that restores them is the only way back -- so hiding one is
+  /// undoable where dropping an import is not.
   void remove(Deck deck) {
-    if (!deck.isImported) return;
-    _imported.removeWhere((held) => held.id == deck.id);
+    if (deck.isImported) {
+      _imported.removeWhere((held) => held.id == deck.id);
+    } else {
+      _held.hiddenStarters.add(deck.id);
+    }
     _save();
     notifyListeners();
   }
 
-  static List<Deck> _read(File? file) {
-    if (file == null || !file.existsSync()) return [];
+  /// Put every hidden starter back.
+  void restoreStarters() {
+    if (_held.hiddenStarters.isEmpty) return;
+    _held.hiddenStarters.clear();
+    _save();
+    notifyListeners();
+  }
+
+  static _Held _read(File? file) {
+    if (file == null || !file.existsSync()) return _Held.empty();
     try {
-      final records = jsonDecode(file.readAsStringSync()) as List<Object?>;
-      return [
-        for (final record in records)
-          Deck.fromJson(record! as Map<String, Object?>),
-      ];
+      final json = jsonDecode(file.readAsStringSync());
+      // A bare array is the format written before hidden starters needed
+      // somewhere to live. Reading it as an object would drop every deck the
+      // user had imported, silently, on upgrade.
+      final records = json is List ? json : (json as Map)['imported'] as List;
+      final hidden = json is Map
+          ? (json['hiddenStarters'] as List?) ?? const []
+          : const [];
+      return _Held(
+        imported: [
+          for (final record in records)
+            Deck.fromJson(record! as Map<String, Object?>),
+        ],
+        hiddenStarters: {for (final id in hidden) id! as String},
+      );
     } catch (_) {
       // A store written by an older version, or half-written, reads as no
       // decks rather than as a launch failure. The only thing lost is a list
       // the user can fetch again.
-      return [];
+      return _Held.empty();
     }
   }
 
@@ -131,7 +175,10 @@ class DeckStore extends ChangeNotifier {
       // write cannot leave a half-file that reads as no decks at all.
       final temporary = File('${file.path}.tmp');
       temporary.writeAsStringSync(
-        jsonEncode([for (final deck in _imported) deck.toJson()]),
+        jsonEncode({
+          'imported': [for (final deck in _imported) deck.toJson()],
+          'hiddenStarters': _held.hiddenStarters.toList()..sort(),
+        }),
         flush: true,
       );
       temporary.renameSync(file.path);
@@ -140,4 +187,21 @@ class DeckStore extends ChangeNotifier {
       // screen, and the user can re-import them next launch.
     }
   }
+}
+
+/// What the store file holds: the imported decks, and which starters the user
+/// has deleted.
+///
+/// Both in one file because they are written together -- hiding a starter and
+/// dropping an import are the same save, and two files would need reconciling
+/// after a half-completed one.
+class _Held {
+  _Held({required this.imported, required this.hiddenStarters});
+
+  _Held.empty() : imported = [], hiddenStarters = {};
+
+  final List<Deck> imported;
+
+  /// `Deck.id`s, so `starter:nat`.
+  final Set<String> hiddenStarters;
 }

@@ -27,6 +27,14 @@ void main() {
     sideSlots: const {},
   );
 
+  Deck starter(String packCode) => Deck(
+    source: StarterSource(packCode),
+    name: packCode,
+    investigatorCode: '60101',
+    slots: const {'60105': 2},
+    sideSlots: const {},
+  );
+
   DeckStore store({List<Deck> starters = const []}) =>
       DeckStore(starters: starters, storeFile: storeFile);
 
@@ -64,10 +72,10 @@ void main() {
       ..add(deck(2, name: 'Second'))
       ..add(deck(1, name: 'First, revised'));
 
-    expect(
-      held.imported.map((deck) => deck.name).toList(),
-      ['First, revised', 'Second'],
-    );
+    expect(held.imported.map((deck) => deck.name).toList(), [
+      'First, revised',
+      'Second',
+    ]);
   });
 
   test('removing an imported deck persists', () {
@@ -80,18 +88,61 @@ void main() {
     expect(_reload(storeFile).length, 1);
   });
 
-  test('starter decks cannot be removed', () {
-    // A starter deck is part of the app. Asking to remove one does nothing
-    // rather than emptying the tab.
-    const starter = Deck(
-      source: StarterSource('nat'),
-      name: 'Nathaniel Cho',
-      investigatorCode: '60101',
-      slots: {'60105': 2},
-      sideSlots: {},
+  test('a store written by the bare-array version still reads', () {
+    // The file was a bare array before hidden starters needed somewhere to
+    // live. Reading it as an object would send it down the malformed path,
+    // which is silent -- every deck the user had imported would disappear on
+    // upgrade with nothing to say it had happened.
+    storeFile.writeAsStringSync(
+      jsonEncode([deck(40838, name: 'Older').toJson()]),
     );
-    final held = store(starters: const [starter])..remove(starter);
-    expect(held.starters.length, 1);
+
+    final reopened = store();
+    expect(reopened.imported.length, 1);
+    expect(reopened.imported.first.name, 'Older');
+  });
+
+  test('removing a starter deck hides it, and persists', () {
+    final held = store(starters: [starter('nat'), starter('mar')]);
+    held.remove(held.starters.first);
+
+    expect(held.starters.map((deck) => deck.id), ['starter:mar']);
+    expect(
+      store(
+        starters: [starter('nat'), starter('mar')],
+      ).starters.map((d) => d.id),
+      ['starter:mar'],
+    );
+  });
+
+  test('restoring brings every hidden starter back, in bundled order', () {
+    final starters = [starter('nat'), starter('mar'), starter('win')];
+    final held = store(starters: starters)
+      ..remove(starter('win'))
+      ..remove(starter('nat'));
+    expect(held.starters.map((deck) => deck.id), ['starter:mar']);
+
+    held.restoreStarters();
+
+    // Order comes from the bundled list, not from the order they were hidden.
+    expect(held.starters.map((deck) => deck.id), [
+      'starter:nat',
+      'starter:mar',
+      'starter:win',
+    ]);
+    expect(store(starters: starters).starters.length, 3);
+  });
+
+  test('hiding a starter leaves the imported decks alone', () {
+    // One file holds both, so a bug in either write empties the other.
+    final held = store(starters: [starter('nat')])
+      ..add(deck(1, name: 'Kept'))
+      ..remove(starter('nat'));
+
+    final reopened = store(starters: [starter('nat')]);
+    expect(reopened.imported.map((deck) => deck.name), ['Kept']);
+    expect(reopened.starters, isEmpty);
+    expect(held.hiddenStarterCount, 1);
   });
 
   test('unreadable store loads as empty', () {
