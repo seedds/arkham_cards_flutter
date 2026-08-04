@@ -123,14 +123,22 @@ class _CardPageState extends State<_CardPage> {
     builder: (context, constraints) {
       final hasVersions = _printings.length > 1;
       final width = constraints.maxWidth - 32;
-      final available = constraints.maxHeight - 24;
+      // Both figures are inside the padding below, so each is the constraint
+      // less that padding's insets on its axis: 16+16 across, 8+0 down. The
+      // clamp measures the art against `available`, so overstating it here
+      // would make the clamp bite early on a small screen.
+      final available = constraints.maxHeight - 8;
       final reserved = hasVersions ? _minimumPickerHeight : 0.0;
       // A height multiplier, not the width-over-height ratio: portrait art is
       // 1.4 times as tall as it is wide.
       final aspect = _selected.isLandscape ? 1 / 1.4 : 1.4;
 
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        // No bottom inset: it sat outside the picker's ListView, so its 16pt
+        // was neither usable height nor scrollable slack -- a dead strip above
+        // the tab bar hairline. The SafeArea above already ends the content
+        // region on that hairline, so the last row clears the bar without it.
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Column(
           children: [
             SizedBox(
