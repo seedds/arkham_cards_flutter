@@ -3,8 +3,8 @@
 """Build the app's bundled assets from the two upstream sources.
 
 Reads:
-  arkhamdb-json-data/      - 159 pack files, plus packs/cycles/factions/types
-  arkham-horror/.../cards/ - one image per card code, as .avif or .jpg
+  arkhamdb-json-data/  - 159 pack files, plus packs/cycles/factions/types
+  arkham-tts/          - one PNG per card code, from tools/extract_tts_images.py
 
 Writes:
   assets/cards.json     - every card, merged and annotated
@@ -16,14 +16,15 @@ the reference for their shape; most of what looks over-complicated below is
 explained there. The guiding rule: **settle a data quirk here, so the Dart
 model does not carry a special case for it.**
 
-The images are transcoded rather than copied. Upstream art is AVIF, Flutter's
-engine cannot decode AVIF, and the one package that can offers no decode-time
-downsampling -- which is the mechanism the whole memory budget rests on. So
-every image is re-encoded as WebP and each card records the WebP filename, so
-nothing at runtime has to guess an extension or stat the filesystem.
+The images are transcoded rather than copied, because Flutter's engine cannot
+decode AVIF and the one package that can offers no decode-time downsampling --
+which is the mechanism the whole memory budget rests on. Each card records the
+WebP filename, so nothing at runtime has to guess an extension or stat the
+filesystem.
 
 Run with the Python that has Pillow, which the system one does not:
 
+    /Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
     /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 """
 
@@ -44,8 +45,7 @@ HOME = os.path.expanduser('~')
 JSON_DATA = os.environ.get(
     'ARKHAM_JSON_DATA', os.path.join(HOME, 'Documents/arkhamdb-json-data'))
 IMAGE_SRC = os.environ.get(
-    'ARKHAM_IMAGE_SRC',
-    os.path.join(HOME, 'Documents/arkham-horror/frontend/public/img/arkham/cards'))
+    'ARKHAM_IMAGE_SRC', os.path.join(HOME, 'Downloads/arkham-tts'))
 
 ASSETS = os.path.join(HERE, 'assets')
 CARDS_JSON = os.path.join(ASSETS, 'cards.json')
@@ -61,7 +61,7 @@ METHOD = 4
 # moved, and the counts in the tests need re-checking rather than the
 # assertion needing relaxing.
 EXPECTED_CARDS = 5928
-EXPECTED_IMAGES = 7742
+EXPECTED_IMAGES = 7617
 
 # The 10 Investigator Starter Deck products, in release order. Each is a pack
 # of its own holding one investigator, that deck's cards at level 0, and a set
@@ -80,9 +80,9 @@ STARTER_PACKS = ('nat', 'tom', 'har', 'car', 'win',
 # or 60 would mean the `xp` convention this derivation rests on has moved.
 DECK_SIZE_RANGE = (30, 40)
 
-# Preferred first. A card present as both keeps only the AVIF, which is the
-# newer and larger of the two wherever both exist.
-EXTENSIONS = ('.avif', '.jpg', '.jpeg', '.png')
+# extract_tts_images.py writes PNG and nothing else: it crops from sprite
+# sheets, so a lossy intermediate would cost a generation for no reason.
+EXTENSIONS = ('.png',)
 
 # Promo printings upstream does not link to the card they reprint, mapped to
 # that card. Every one is a standalone record carrying its own name, type and
@@ -120,7 +120,7 @@ def log(message):
     print(message, flush=True)
 
 def webp_name(filename):
-    """The bundled name for an upstream image: `01001.avif` -> `01001.webp`."""
+    """The bundled name for an extracted image: `01001.png` -> `01001.webp`."""
     return os.path.splitext(filename)[0] + '.webp'
 
 def printed_number(card):
@@ -377,7 +377,7 @@ def build_records(cards, packs, encounters, images):
       sort      - cycle, then pack, then position within the pack.
 
     The two image fields name the WebP that `transcode_images` writes, not the
-    AVIF upstream holds, so the app never has to map one to the other.
+    PNG the extraction leaves, so the app never has to map one to the other.
 
     Every record is listable. Reprints and the far halves of `back_link`
     pairs were once filtered out of the list, on the grounds that they
@@ -411,7 +411,16 @@ def build_records(cards, packs, encounters, images):
         if card.get('duplicate_of'):
             counts['reprint of another card'] += 1
 
-        front = images.get(code)
+        # A reprint with no picture of its own borrows the one belonging to the
+        # card it reprints, which is the same card in an earlier box. The art
+        # source is the TTS mod, which stocks each card once and does not carry
+        # the later printing's code, so without this 52 cards -- the Revised Core
+        # Set investigators and the starter decks' reprints among them -- show a
+        # placeholder while their Core Set twin, the identical card, has a
+        # picture.
+        reprint_of = card.get('duplicate_of') or card.get('alternate_of')
+
+        front = images.get(code) or images.get(reprint_of)
         record['front_image'] = webp_name(front) if front else None
         if front is None:
             counts['no front image'] += 1
@@ -423,6 +432,8 @@ def build_records(cards, packs, encounters, images):
             back_code = code + 'b'
 
         back = images.get(back_code) if back_code else None
+        if back is None and back_code and reprint_of:
+            back = images.get(reprint_of + 'b')
         record['back_image'] = webp_name(back) if back else None
         record['back_code'] = back_code
         if back_code and back is None:
@@ -443,14 +454,14 @@ def build_records(cards, packs, encounters, images):
             'tests.'.format(EXPECTED_CARDS, len(records)))
 
     # Named rather than just counted, because the count alone cannot tell a
-    # card the game prints one-sided from one whose back the image source
-    # happens to be missing. 98004 is the latter: arkhamdb serves 98004b,
-    # this dump has no such file, and the app drew no flip button with no
-    # way to tell that was wrong.
+    # card the game prints one-sided from one whose back the extraction simply
+    # did not reach. 98004 is the latter: the data says it has a back, and the
+    # app drew no flip button with no way to tell that was wrong. These fall
+    # back to the card's text on the detail screen.
     if missing_backs:
-        log('  {} cards want a back image the source does not have:'.format(
+        log('  {} cards want a back image the extraction does not have:'.format(
             len(missing_backs)))
-        for record in sorted(missing_backs, key=lambda r: r['code']):
+        for record in sorted(missing_backs, key=lambda r: r['code'])[:12]:
             log('    {:<8} {:<32} {}'.format(
                 record['code'], record['name'][:32], record['pack_name']))
     return records
@@ -550,8 +561,9 @@ def transcode(job):
 def transcode_images(records, images, force):
     """Re-encode as WebP only the images some card actually points at.
 
-    The source directory carries ~194 images with no matching card, which
-    would otherwise be dead weight in the bundle.
+    The extraction can write images no card record points at -- cards the TTS
+    mod carries and this data dump does not -- which would otherwise be dead
+    weight in the bundle.
     """
     # Every image index entry is keyed by stem, so no two source files can
     # collapse onto one WebP name.

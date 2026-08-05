@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../models/card.dart' as model;
 import '../models/card_database.dart';
-import 'card_back_text.dart';
+import 'card_text.dart';
 import 'card_image_view.dart';
 import 'card_row.dart';
 
@@ -275,11 +275,15 @@ class _PrintingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final filename = showingBack ? printing.backImage : printing.frontImage;
-    // A back that exists in the data but not as a picture stands in as text.
-    // Only ever the back: a front is a picture or nothing.
-    final backText = showingBack && printing.backImage == null
+    // A side the data describes but has no picture for stands in as text. Both
+    // sides can be in that position: the TTS mod the art is cropped from has no
+    // object for every code, so 124 fronts and 50 backs have only words.
+    final text = filename != null
+        ? null
+        : showingBack
         ? printing.backText
-        : null;
+        : printing.text;
+    final flavor = showingBack ? printing.backFlavor : printing.flavor;
 
     return GestureDetector(
       // A one-sided card ignores taps entirely.
@@ -287,11 +291,15 @@ class _PrintingView extends StatelessWidget {
       child: Semantics(
         button: printing.hasBack,
         hint: printing.hasBack ? 'Tap to turn the card over' : null,
-        child: backText != null
+        child: text != null
             // Its own scroll view: the screen no longer provides one and the
             // longest back runs to 935 characters.
             ? SingleChildScrollView(
-                child: CardBackText(card: printing, text: backText),
+                child: CardText(
+                  card: printing,
+                  text: text,
+                  flavor: flavor,
+                ),
               )
             : DecoratedBox(
                 decoration: BoxDecoration(

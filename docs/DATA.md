@@ -9,15 +9,29 @@ Neither source is in this repo, and neither is version-pinned.
 | Source | Provides |
 | --- | --- |
 | `~/Documents/arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction, type and encounter-set names |
-| `~/Documents/arkham-horror/frontend/public/img/arkham/cards` | 7,947 card images, nearly all `.avif` |
+| `~/Library/Tabletop Simulator` + the SCED boxes | the sprite sheets the card art is cut out of |
 
-`tools/build_assets.py` reads both and writes `assets/`. The guiding rule:
-**settle a data quirk in the build script, so the Dart model does not carry a
-special case for it.**
+`tools/extract_tts_images.py` crops the art; `tools/build_assets.py` reads the
+card data and the crops and writes `assets/`. The guiding rule: **settle a data
+quirk in the build script, so the Dart model does not carry a special case for
+it.**
 
-The images are transcoded, not copied: Flutter cannot decode AVIF, so every
-one is re-encoded as WebP and each card records the WebP filename. Everything
-below describes the source material, which is AVIF.
+The images are transcoded, not copied: Flutter cannot decode the AVIF the
+sheets sometimes arrive as, so every crop is re-encoded as WebP and each card
+records the WebP filename.
+
+### Why the art comes from Tabletop Simulator
+
+It used to be a loose copy of `arkhamhorror.app`'s card directory at
+`~/Documents/arkham-horror/…`. That tree had no remote, no tag and no way to
+reproduce it — 2 GB recoverable from nowhere if the directory were lost — and
+the script that populated it read the very tree it was replacing to decide
+what to write.
+
+The [SCED](https://github.com/argonui/SCED) Tabletop Simulator mod carries the
+same art as sprite sheets, published per campaign box, and every sheet is
+already in the local cache. The trade is coverage: see
+[What the extraction cannot reach](#what-the-extraction-cannot-reach).
 
 ## The card set, by the numbers
 
@@ -76,21 +90,27 @@ card, and it is not a pointer, so it cannot say which card they reprint.
 back to one side's art to fill in for the other — that captions one card's
 picture with another card's name. This has already happened once.
 
+A *reprint* is the opposite case and the fallback there is sound: `duplicate_of`
+and `alternate_of` mean the same card in another box, so borrowing that card's
+picture shows the right card. Do not conflate the two relations.
+
 ### 2. Front and back are independently optional
 
-`05217` (Nathan Wick) has a back image and **no front image**. A card having
-art at all is not implied by it having a back, or the reverse.
+`05288a` (Dark Knowledge v. II) has a back image and **no front image**. A card
+having art at all is not implied by it having a back, or the reverse.
 
-- 59 cards have no front art
-- 27 cards have no art on either side
+- 124 cards have no front art
+- 54 cards have no art on either side
 
-Both render `CardPlaceholder`.
+The detail screen shows the card's text for a side with no picture; a row, which
+has no space for text, shows `CardPlaceholder`.
 
 ### 3. 169 cards were printed more than once
 
 Group sizes: 135 cards have 2 printings, 29 have 3, 3 have 4, and 2 have 5. The
-art differs between them, which is the whole reason the detail screen shows a
-row per printing.
+art usually differs between them, which is the reason the detail screen shows a
+row per printing — though a reprint the TTS mod has no object for borrows the
+original's picture, so 34 groups now show one image across several rows.
 
 Two pointer fields link them:
 
@@ -291,53 +311,118 @@ silent. Do not "fix" the loader to warn on all repeats; it will just be noise.
 
 ## Images
 
-The image directory is keyed by card code with the extension varying:
-`01001.avif` for most, `.jpg` for a handful. `build_assets.py` picks one per
-code (preferring AVIF) and records the transcoded `.webp` filename on each
-card, so the app never guesses an extension or stats the filesystem.
+The art is cut out of Tabletop Simulator sprite sheets by
+`tools/extract_tts_images.py`, which writes one PNG per card code into a
+staging directory. `build_assets.py` transcodes those to WebP and records the
+`.webp` filename on each card, so the app never guesses an extension or stats
+the filesystem.
 
-Of the 7,947 source images, 7,742 are referenced by some card and transcoded;
-about 205 are orphans — taboo variants (`01033_Mutated15`), per-class Lola
-Hayes art (`03006_Guardian`), and near-miss codes.
+7,617 images end up bundled, at 1.19 GB.
 
-**Art size varies.** `01029` is 423x600, `01001` is 600x423, others are
-750x1050. Never assert an exact size in a test; assert an aspect or a lower
-bound. Investigator, act and agenda art is landscape — see `Card.isLandscape`.
+### How TTS stores a card
 
-### 22 cards want a back the source does not have
+A card object's `CardID` encodes two things:
 
-`build_assets.py` names them all at the end of its run. They are cards whose
-data says two-sided but whose back image is simply not in the dump, so
-`back_image` comes out null and the detail screen draws no flip button.
-
-| Group | Count |
+| | |
 | --- | --- |
-| Investigators — promos and Starter Decks | 12 |
-| The Blob That Ate Everything ELSE! | 7 |
-| Story, location, scenario | 3 |
+| `str(CardID)[:-2]` | a key into the object's `CustomDeck`, naming the sheet |
+| `CardID % 100` | the cell, in a `NumWidth` x `NumHeight` grid, row-major |
 
-16 of the 22 still carry their back *text*, which is how you can tell this is
-a gap in the images rather than a one-sided card. Those 16 flip to that text
-via `CardBackText`; the other 6 have neither picture nor text and stay
-one-sided. This is the one place the app shows data instead of a picture.
+The ArkhamDB code is in `GMNotes`, as JSON under `id`. 123 card objects have no
+code there — the Exploration Map, Open Sky, the Fortune and Folly playing cards
+— and are skipped.
 
-The worked example is `98004` Roland Banks. It is `double_sided`, arkhamdb
-serves `98004b.jpg`, and this dump has only `98004.avif` — verified by listing
-the source directory, where `01001` has `01001b.avif` and `98004` has no `b`
-file under any extension. Nothing was wrong with the app; the picture was
-never there. Resist filling these in from the reprint's art — see the trap in
-quirk 1.
+**A card in a bag has a stale `CustomDeck`.** TTS does not refresh it, so the
+entry has to be looked up in the nearest enclosing deck as a fallback. This is
+what the mod's own `AllEncounterCardsBag` script does.
 
-The boundary is worth stating because it is narrower than it looks: 1,183
-cards carry `back_text`, but 1,167 of them also have a back image and keep
-showing it. Exactly 16 fall through to text, and no card gains a back it did
-not already claim.
+### Three traps in the sprite sheets
 
-**Markup.** These backs are not plain strings. Across the 16 there are seven
-HTML tags (`<b>`, `<i>`, `<hr>`, `<blockquote>` and closers) and nine symbol
-tokens (`[guardian]`, `[skull]`, `[elder_thing]`…). `CardBackText.plain`
-strips the tags, turns `<hr>` into a blank line, and spells the symbols out as
-words — the app has no icon assets to draw them with.
+**The declared grid can be a lie.** A sheet holding a single 750x1050 card can
+declare `3x2` or `7x2`, left over from an edit upstream that split a sheet
+without updating `NumWidth`/`NumHeight`. Slicing by it yields a 250x525 sliver
+of one card. 54 of those shipped unnoticed in the first attempt, because nothing
+downstream looked at a picture's shape. `cell_grid` overrides a grid that would
+produce a non-card-shaped cell, and `test/card_images_test.dart` pins the
+result.
+
+The test has to be on the **cell**, not the sheet: a 4x2 sheet of 750x1050
+cards is 3000x2100, whose 1.43 is as card-shaped as a card. Testing the sheet
+wrote 684 whole sprite sheets as single cards.
+
+**`SidewaysCard` is not enough to get orientation right.** 26 crops came out a
+quarter-turn round with it alone. The card's `type_code` is the better
+authority — `investigator`, `act` and `agenda` are landscape, the same rule as
+`Card.isLandscape` — and checked against the old image source it agreed on
+7,739 of 7,742. So orientation is decided by type, and the crop is rotated to
+match.
+
+**`FaceURL` is not always the front.** For a two-sided card TTS shows the
+unrevealed side of a location while ArkhamDB shows the revealed one, and no
+field says which is which — the most promising, `locationBack`, gets 311 cards
+wrong. `tools/swap_list.json` records the answer for 946 cards, measured once
+by comparing the images against `arkhamhorror.app`. It is committed rather than
+regenerated, because regenerating it needs the network.
+
+**`UniqueBack` under-reports.** TTS sets it on only some cards that really have
+their own back, so a back is also kept when its image merely differs from the
+face — guarded by a share count, since 30 generic-back URLs cover 11,909 cards
+between them. Measured:
+
+| rule | emitted | missed |
+| --- | --- | --- |
+| `UniqueBack` only | 4,118 | 182 |
+| back ≠ face | 13,455 | 0 (9,813 spurious) |
+| `UniqueBack` or (differs and shared ≤ 20) | 4,318 | 26 |
+
+**Art size varies.** `01029` is 423x600, `01001` is 600x423, most are 750x1050.
+Never assert an exact size in a test; assert an aspect or a lower bound.
+
+### A reprint borrows the art of the card it reprints
+
+The mod stocks each card once, under its first printing's code. It has no object
+for `01501` (Revised Core Roland) or `60108` (a starter deck's Physical
+Training), so 52 fronts and 26 backs would be blank beside an identical twin
+that has a picture.
+
+`build_assets.py` follows `duplicate_of`/`alternate_of` for the art when a card
+has none of its own. It never overrides a card's own picture — verified: all 52
+are cases where the mod has no object for that code at all.
+
+The consequence is that **a printing group's art is no longer all distinct.**
+All four Roland Banks printings show one portrait; the rows are told apart by
+box and number, which is what they are for. 135 groups still have distinct art.
+
+### What the extraction cannot reach
+
+54 cards have no picture at all, and `build_assets.py` names the missing backs
+at the end of its run. Of 176 cards that started with no front, 175 were codes
+the mod carries no object for — it uses Core Set `01001` for Roland and never
+the Revised reprint — and exactly 1 was a crop failure, a truncated cached
+sheet. The reprint fallback then recovered 122 of them.
+
+Every one of the 54 has card `text`, and the detail screen shows that instead
+via `CardText`. 50 more cards claim a second side whose picture is missing and
+draw no flip button.
+
+The complementary case is gone: **no card now flips from a picture to a text
+back.** A card the mod misses tends to miss both sides at once, so the text
+stands in for the *front* and the flip reaches a real picture — `03076a`
+Constance Dumaine is the worked example.
+
+Two hosts do serve the whole gap — `assets.arkhamhorror.app` has all 173 that
+TTS lacks, byte-identical to the old source, and `arkhamdb.com/bundles/cards/`
+has 106 of them. Neither is used: the app and its pipeline are offline by
+design, and a runtime fetch would need a cache, an eviction policy and a
+loading state that the `ResizeImage` memory budget rests on not having.
+
+**Markup.** The text these cards fall back to is not a plain string. Across the
+202 bodies that render there are six HTML tags (`<b>`, `<i>`, `<hr>`,
+`<blockquote>`, `<u>`, `<br>`) and 30 symbol tokens. `CardText.plain` strips the
+tags, turns `<hr>` into a blank line, and spells the symbols out as words — the
+app has no icon assets to draw them with. An unlisted token is reduced to its
+bare name, so a symbol a later box introduces reads as a word rather than as
+`[tdc_rune_x]`.
 
 ### arkhamdb and the local JSON disagree about the promos
 
@@ -356,28 +441,36 @@ every distinct code being its own row. But do not conclude from a differing
 illustrator alone that two records are different cards. That conclusion has
 already been drawn wrongly once from exactly this field.
 
-### The near-miss filenames
+### Where the sprite sheets come from
 
-34 of the 58 cards with no front art have an image in the source directory
-under an almost-matching name: `04117a` needs `04117.avif`, `03325` needs
-`03325a.avif`. A suffix-matching rule in `build_assets.py` would cut the gap
-from 58 to about 24. Not implemented — it is a guess about upstream naming, and
-guessing wrong means showing the wrong card's art, which is worse than showing
-a placeholder.
+941 sheets, all already cached locally, in two places:
 
-### `extract_card_images.py` is upstream, not part of the build
+| | Sheets | Wanted images they supply |
+| --- | --- | --- |
+| `~/Library/Tabletop Simulator/Mods/Images` | 676 | 3,426 |
+| the sheet cache | 265 | 4,143 |
 
-`~/Sync/Python_Scripts/tts_json_backup/extract_card_images.py` crops card art
-out of Tabletop Simulator sprite sheets. Its `APP_SYNC` mode writes *into* the
-`arkham-horror` directory this project reads, so it sits upstream of
-`build_assets.py`, not inside it.
+The first is what TTS itself downloads when a box is opened in-game, and what
+`~/Sync/Python_Scripts/tts_json_backup/tts_json_backup.py` tops up. The second
+holds the sheets for boxes never opened — most of the encounter card art.
 
-Do not wire it into this build. It needs network access, a Tabletop Simulator
-save file, and hours of runtime. Its own standalone output covers only 5,437
-card codes against the 5,869 the `arkham-horror` directory already has.
+Both are keyed by TTS's own cache-name scheme: the URL with `/:-_.?=%` stripped.
+`sheet_filename` reproduces it, which is why the existing cache can be reused
+as-is.
 
-To improve the art: run that script in its own directory, then re-run
-`tools/build_assets.py` here.
+Which boxes to read comes from the SCED `library.json` manifest: the 37 of 191
+entries authored by Fantasy Flight Games with type `campaign` or `scenario`.
+
+`DOWNLOAD_SHEETS` is deliberately absent — the extraction is offline. A sheet
+that is genuinely missing is reported and its cards fall back to text.
+
+### `extract_card_images.py` was the ancestor, not the build
+
+`~/Sync/Python_Scripts/tts_json_backup/extract_card_images.py` is where this
+logic came from. Do not run it against this project: its `APP_SYNC` mode reads
+the `arkham-horror` directory for its wanted-file list, its resolution floor and
+its identity check — the very tree this pipeline replaced. `tools/extract_tts_images.py`
+derives all three locally instead, from the pack files and `type_code`.
 
 ## The arkhamdb API
 
@@ -407,7 +500,7 @@ The response also carries `xp`, `taboo_id`, `meta` (customisation strings),
 - `taboos.json` — the tournament ban/tax list.
 - Deck validation. `deck_options` and `deck_requirements` describe what a legal
   deck looks like; the app displays decks rather than checking them.
-- Card text markup, except on the 16 backs above. Upstream text carries `<b>`
-  tags and `[action]`-style icon tokens; the detail screen is art, so only
-  `CardBackText.plain` deals with them. A general renderer would need icon
+- Card text markup, except on the sides with no picture above. Upstream text
+  carries `<b>` tags and `[action]`-style icon tokens; the detail screen is art,
+  so only `CardText.plain` deals with them. A general renderer would need icon
   assets this bundle does not carry.

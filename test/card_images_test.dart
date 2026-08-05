@@ -22,16 +22,35 @@ void main() {
   });
 
   test('almost every card has art', () {
-    // 27 of 5,928 cards have no bundled art and fall back to a placeholder.
-    // Pinned so that a regression in the image pipeline, which would push this
-    // number up, fails the build.
+    // 54 of 5,928 cards have no bundled art: the TTS sprite sheets the pipeline
+    // crops from do not carry every printing. Pinned so that a regression in
+    // the image pipeline, which would push this number up, fails the build.
     final withoutArt = database.all
         .where((card) => card.frontImage == null && card.backImage == null)
         .toList();
     expect(
       withoutArt.length,
-      27,
+      54,
       reason: 'missing: ${withoutArt.take(5).map((card) => card.code)}',
+    );
+  });
+
+  test('a card with no picture has words instead', () {
+    // The detail screen falls back to card text for a side it has no picture
+    // for, so a card with neither would show only its name. Every one of the 54
+    // has text today; a new card that had neither would be a blank screen.
+    final blank = database.all
+        .where(
+          (card) =>
+              card.frontImage == null &&
+              card.backImage == null &&
+              card.text == null,
+        )
+        .toList();
+    expect(
+      blank,
+      isEmpty,
+      reason: 'nothing to show for: ${blank.take(5).map((card) => card.code)}',
     );
   });
 
@@ -50,14 +69,32 @@ void main() {
         .map((file) => file.uri.pathSegments.last)
         .toSet();
 
-    expect(bundled.length, 7742);
+    expect(bundled.length, 7617);
     expect(bundled.difference(referenced), isEmpty);
     expect(referenced.difference(bundled), isEmpty);
   });
 
+  test('no image is a sliver of a card', () {
+    // The art is cropped out of TTS sprite sheets by a declared grid, and a
+    // sheet whose declared grid no longer matches its layout yields a strip of
+    // one card rather than a card. 54 of those shipped unnoticed, because
+    // nothing downstream looked at a picture's shape. No real card art is under
+    // 300px on its short edge or far off 1.4:1.
+    final wrong = <String>[];
+    for (final file in Directory(imageDirectory).listSync().whereType<File>()) {
+      final size = _dimensions(file.uri.pathSegments.last);
+      final short = size.width < size.height ? size.width : size.height;
+      final long = size.width < size.height ? size.height : size.width;
+      if (short < 300 || long / short < 1.28 || long / short > 1.52) {
+        wrong.add('${file.uri.pathSegments.last} ${size.width}x${size.height}');
+      }
+    }
+    expect(wrong, isEmpty, reason: 'not card-shaped: ${wrong.take(5)}');
+  });
+
   test('every image is a WebP', () {
-    // Flutter's engine cannot decode the AVIF upstream holds, so an image
-    // that slipped through untranscoded would render as nothing at all.
+    // Flutter's engine cannot decode the AVIF and PNG the pipeline reads, so an
+    // image that slipped through untranscoded would render as nothing at all.
     // Checked by magic number rather than by extension, which is the thing a
     // rename would get wrong.
     final wrong = <String>[];

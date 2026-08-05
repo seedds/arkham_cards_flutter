@@ -46,9 +46,9 @@ void main() {
     });
 
     test('cards wanting a back image that is not bundled', () {
-      // 22 cards say they have a second side but no image of it was bundled.
-      // `98004` Roland Banks is one: arkhamdb serves `98004b`, the image source
-      // this bundle is built from does not.
+      // 50 cards say they have a second side but no image of it was bundled.
+      // The art is cropped from the Tabletop Simulator mod's sprite sheets, and
+      // the mod does not carry every printing the card data describes.
       final wantsABack = database.all
           .where(
             (card) =>
@@ -58,43 +58,49 @@ void main() {
           .toList();
       expect(
         wantsABack.length,
-        22,
+        50,
         reason: 'missing: ${wantsABack.take(5).map((card) => card.code)}',
       );
 
-      final roland = database.card('98004')!;
-      expect(roland.doubleSided, isTrue);
-      expect(roland.backImage, isNull);
-      // The front is present, so this is a missing back and not a card
-      // without art at all.
-      expect(roland.frontImage, '98004.webp');
+      // 01121a has its front but not its back, so a missing back is its own
+      // case and not merely a card the extraction skipped entirely.
+      final predator = database.card('01121a')!;
+      expect(predator.backLink, '01121b');
+      expect(predator.backImage, isNull);
+      expect(predator.frontImage, '01121a.webp');
     });
 
-    test('missing back image falls back to text for sixteen', () {
-      // Of those 22, the 16 carrying the back's text flip to it; the 6 with
-      // neither picture nor text stay one-sided.
-      final wantsABack = database.all
-          .where(
-            (card) =>
-                (card.backLink != null || card.doubleSided == true) &&
-                card.backImage == null,
-          )
+    test('a reprint borrows the art of the card it reprints', () {
+      // The mod stocks each card once, under the code of its first printing, so
+      // a later box's reprint has no picture of its own. It is the same card, so
+      // the build script points it at the original's art rather than leaving 52
+      // cards showing a placeholder beside their identical twin.
+      final revised = database.card('01501')!;
+      expect(revised.name, 'Roland Banks');
+      expect(revised.frontImage, '01001.webp');
+      expect(revised.backImage, '01001b.webp');
+
+      // Physical Training in a starter deck, whose Core Set original is 01017.
+      expect(database.card('60108')!.frontImage, '01017.webp');
+    });
+
+    test('a card with no picture of a side has its text', () {
+      // The detail screen shows words for a side it has no picture of. 54 cards
+      // have no picture at all -- the mod has no object for their code and they
+      // are nobody's reprint -- and every one of them has text to show instead.
+      final blank = database.all
+          .where((card) => card.frontImage == null && card.backImage == null)
           .toList();
-      final withText =
-          wantsABack.where((card) => card.backText != null).toList();
-      expect(withText.length, 16);
-      expect(wantsABack.length - withText.length, 6);
+      expect(blank.length, 54);
+      expect(blank.every((card) => card.text != null), isTrue);
 
-      // Roland flips to his deckbuilding rules.
-      final roland = database.card('98004')!;
-      expect(roland.hasBack, isTrue);
-      expect(roland.backText, isNotNull);
-
-      // The Organist has neither, so there is nothing to turn over to.
-      final organist = database.card('03221b')!;
-      expect(organist.backImage, isNull);
-      expect(organist.backText, isNull);
-      expect(organist.hasBack, isFalse);
+      // Predator or Prey has its front picture and neither a back picture nor
+      // back text, so there is nothing to turn over to and it stays one-sided.
+      final predator = database.card('01121a')!;
+      expect(predator.frontImage, isNotNull);
+      expect(predator.backImage, isNull);
+      expect(predator.backText, isNull);
+      expect(predator.hasBack, isFalse);
     });
 
     test('traits and skills', () {
@@ -317,7 +323,7 @@ void main() {
       // The two sides of a `back_link` pair are different cards, so a side
       // with no bundled art must show a placeholder rather than borrow the
       // other's picture.
-      final front = database.card('05217')!;
+      final front = database.card('05288a')!;
       final back = database.back(front)!;
 
       expect(front.frontImage, isNull,

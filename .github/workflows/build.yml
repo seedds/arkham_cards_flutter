@@ -14,8 +14,8 @@ env:
   # testing the app that ships.
   FLUTTER_VERSION: 3.44.8
   # The release tag tools/publish_assets.sh writes to.
-  IMAGES_TAG: card-images-v1
-  EXPECTED_IMAGES: 7742
+  IMAGES_TAG: card-images-v2
+  EXPECTED_IMAGES: 7617
 
 jobs:
   android:

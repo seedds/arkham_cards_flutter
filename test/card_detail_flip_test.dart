@@ -1,4 +1,4 @@
-import 'package:arkham_cards/views/card_back_text.dart';
+import 'package:arkham_cards/views/card_text.dart';
 import 'package:arkham_cards/views/card_detail_view.dart';
 import 'package:arkham_cards/views/card_image_view.dart';
 import 'package:flutter/cupertino.dart';
@@ -93,22 +93,26 @@ void main() {
       expect(shownImage(tester), '01001.webp');
     });
 
-    testWidgets('shows the back as text where there is no back picture', (
+    testWidgets('shows a side as text where there is no picture of it', (
       tester,
     ) async {
-      // 98004, the Roland Banks promo: one of the 16 cards whose back exists in
-      // the data but not as a picture.
-      final promo = database.card('98004')!;
-      expect(promo.backImage, isNull, reason: 'fixture must have no back art');
-      expect(promo.backText, isNotNull);
+      // 03076a Constance Dumaine: the TTS mod has no object for this side, so
+      // her front is text and turning her over reaches a real picture. The
+      // reverse case -- a picture that flips to text -- no longer occurs, since
+      // a card the mod misses tends to be missing both sides at once.
+      final constance = database.card('03076a')!;
+      expect(constance.frontImage, isNull, reason: 'fixture must lack a front');
+      expect(constance.text, isNotNull);
+      expect(constance.backImage, isNotNull);
 
-      await pumpDetail(tester, codes: ['98004']);
-      expect(find.byType(CardBackText), findsNothing);
+      await pumpDetail(tester, codes: ['03076a']);
+      expect(find.byType(CardText), findsOneWidget);
 
       await tester.tap(flipButton());
       await tester.pumpAndSettle();
 
-      expect(find.byType(CardBackText), findsOneWidget);
+      expect(find.byType(CardText), findsNothing);
+      expect(shownImage(tester), '03076b.webp');
     });
 
     testWidgets('appears and disappears as the pager moves', (tester) async {
@@ -168,29 +172,31 @@ void main() {
   });
 
   testWidgets('choosing another version shows its front', (tester) async {
-    // Roland Banks has four printings. Flipped to the Core Set back, tapping
-    // the Revised Core row must show 01501's front, not its back: the side is
-    // not a property the new version inherits.
+    // Roland Banks has four printings. Flipped to the Core Set back, choosing
+    // another version must come back to a front: the side is not a property the
+    // new version inherits.
+    //
+    // The rows cannot be told apart by their thumbnail any more -- all four
+    // printings borrow the Core Set art, since the TTS mod carries Roland once
+    // -- so the row is taken by position instead.
     await pumpDetail(tester, codes: ['01001']);
-    final reprint = database.card('01501')!;
-    expect(reprint.backImage, '01501b.webp', reason: 'fixture has back art');
+    final roland = database.card('01001')!;
+    expect(database.printings(roland), hasLength(4));
 
     await tester.tap(flipButton());
     await tester.pumpAndSettle();
     expect(shownImage(tester), '01001b.webp');
 
-    // The version picker's row for 01501, found by the art its thumbnail asks
-    // for, which is the only thing telling the four same-named rows apart.
     await tester.tap(
       find
           .byWidgetPredicate(
             (widget) =>
-                widget is CardImageView && widget.filename == '01501.webp',
+                widget is CardImageView && widget.filename == '01001.webp',
           )
           .last,
     );
     await tester.pumpAndSettle();
 
-    expect(shownImage(tester), '01501.webp');
+    expect(shownImage(tester), '01001.webp');
   });
 }

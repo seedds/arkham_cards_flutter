@@ -8,15 +8,16 @@ rather than in the code.
 ## Commands
 
 ```sh
-flutter test                      # 112 tests, ~2s, against the real bundled data
+flutter test                      # 115 tests, ~2s, against the real bundled data
 flutter analyze
 
+/Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 ./tools/publish_assets.sh         # push that art to the release CI builds from
 gh workflow run build.yml         # APK and unsigned IPA -- see RELEASING.md
 ```
 
-Use that Python for the asset script: it has Pillow, which the system one does
+Use that Python for the asset scripts: it has Pillow, which the system one does
 not.
 
 To see a screen without tapping through the simulator, name it at build time:
@@ -43,31 +44,37 @@ that way. Add a define for the screen you need instead.
 
 ## The asset pipeline is not source
 
-`assets/` comes from `tools/build_assets.py`, which reads two upstream
-checkouts that are not in this repo and are not version-pinned:
+`assets/` comes from two scripts, run in order, reading sources that are not in
+this repo and are not version-pinned:
 
 | Source | Provides |
 | --- | --- |
 | `~/Documents/arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction and type names |
-| `~/Documents/arkham-horror/frontend/public/img/arkham/cards` | 7,947 card images, nearly all AVIF |
+| `~/Library/Tabletop Simulator` + the cached SCED boxes | 941 sprite sheets the card art is cut out of |
 
-The script settles every data quirk — reprints filled in, the two forms of card
-back collapsed to one field, the ten promo printings linked, the starter decks
-derived from `xp` — so no widget carries a special case for any of it.
-`docs/DATA.md` explains each one.
+`tools/extract_tts_images.py` crops one PNG per card code out of those sheets.
+`tools/build_assets.py` then settles every data quirk — reprints filled in and
+given the original's art, the two forms of card back collapsed to one field, the
+ten promo printings linked, the starter decks derived from `xp` — so no widget
+carries a special case for any of it. `docs/DATA.md` explains each one.
 
-**It also transcodes.** Flutter's engine cannot decode AVIF. `flutter_avif`
-exists but offers no decode-time downsampling, which is the mechanism the whole
-memory budget rests on, so it is not an option. Every referenced image is
-re-encoded as WebP q80 at native resolution (1.20 GB) and each card records the
-`.webp` filename.
+**It also transcodes.** Flutter's engine cannot decode AVIF, which some sheets
+arrive as. `flutter_avif` exists but offers no decode-time downsampling, which is
+the mechanism the whole memory budget rests on, so it is not an option. All
+7,617 referenced images are re-encoded as WebP q80 at native resolution
+(1.19 GB) and each card records the `.webp` filename.
 
 `assets/CardImages/` is gitignored, so **a fresh clone has card data and no art
-until the script has been run**, and the image tests fail until then. The two
+until both scripts have been run**, and the image tests fail until then. The two
 JSON files are committed.
 
-Re-running is cheap: an image whose source has not changed is skipped, so only
-what actually moved is transcoded.
+Re-running either is cheap: a card already cropped, or an image whose source has
+not changed, is skipped.
+
+**The art does not cover everything.** The TTS mod carries no object for 54
+cards, which show their text on the detail screen instead of a picture. Both
+`assets.arkhamhorror.app` and `arkhamdb.com` would close that gap over the
+network; that is a deliberate no — see `docs/DATA.md`.
 
 ## Verify by looking, not just by testing
 
@@ -107,6 +114,9 @@ codebase:
 | Sorting the browse list can reorder `all` | It cannot. The cycle list is derived by walking `all` in bundled order, so a sort applies to the result and never to the field. |
 | `flutter build ipa --no-codesign` gives an unsigned IPA | There is no such flag on `build ipa`, and its export step needs a signing identity regardless. `--no-codesign` is on `build ios`, and stops at `build/ios/iphoneos/Runner.app`. The workflow zips that into `Payload/` by hand. |
 | A CI runner can hold two of these builds | It has 14 GB. A release iOS build leaves two distinct 1.2 GB copies of `Runner.app` — `iphoneos/` and `Release-iphoneos/`, different inodes, not hardlinks — plus dSYMs, and peaks near 8.4 GB. The workflow deletes the intermediates before zipping and prints `df -h`. |
+| A sprite sheet's declared grid says how to cut it | `NumWidth`/`NumHeight` can be left over from an edit that split the sheet, so slicing a single 750x1050 card by its declared `7x2` yields a 107x525 sliver. 54 shipped that way. Check the *cell*, not the sheet: a 4x2 sheet of cards is 3000x2100, whose 1.43 is as card-shaped as a card, and testing the sheet wrote 684 whole sprite sheets as single cards. |
+| `SidewaysCard` tells you which way up a crop goes | Not on its own — 26 came out a quarter-turn round. `type_code` is the authority, and agreed with the old image source on 7,739 of 7,742. |
+| Every printing of a card has its own art | Not any more. The TTS mod stocks a card once, under its first printing's code, so a reprint borrows the original's picture and all four Roland Banks rows show one portrait. They are told apart by box and number. |
 
 ## Conventions
 
@@ -126,11 +136,11 @@ codebase:
 - **`uses-material-design: false`.** No Material widget is used, and the icon
   font is dead weight in a bundle already over a gigabyte.
 - **The detail screen is art, not data.** Everything but name, type, class, box
-  and number is printed on the card itself. The one exception is the 16 cards
-  whose back exists as text but not as a picture.
+  and number is printed on the card itself. The one exception is a side the TTS
+  mod has no picture of, which shows the card's text instead.
 - **Search matches the card name only.** Traits and card text were once
   searched too, which buried the card you were naming under every card that
   mentions it.
-- **Android is sideload-only.** 1.20 GB of assets is fine on iOS (App Store caps
+- **Android is sideload-only.** 1.19 GB of assets is fine on iOS (App Store caps
   at 4 GB) but exceeds Google Play's 1 GB install-time asset-pack limit, so a
   Play build would need Play Asset Delivery or a lower-resolution variant.

@@ -2,10 +2,10 @@
 
 How to get an APK and an IPA out of GitHub Actions.
 
-CI cannot build the card art. `tools/build_assets.py` reads two upstream
-checkouts that exist only on the maintainer's machine — so the transcoded art
-is published once as a release asset, and every CI run downloads it. That is
-step 1, and it is only repeated when the art actually changes.
+CI cannot build the card art. The pipeline reads a Tabletop Simulator install
+and a card-data checkout that exist only on the maintainer's machine — so the
+transcoded art is published once as a release asset, and every CI run downloads
+it. That is step 1, and it is only repeated when the art actually changes.
 
 Everything here needs `gh` authenticated against the repo.
 
@@ -15,12 +15,14 @@ Only when `assets/CardImages/` has changed — or once, on a repo that has never
 had it published.
 
 ```sh
-/Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py  # if not already built
+# if not already built
+/Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
+/Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 ./tools/publish_assets.sh
 ```
 
-The script checks the directory holds exactly 7,742 WebPs, tars them, creates
-the `card-images-v1` release and uploads a **1.22 GB** tarball, then deletes the
+The script checks the directory holds exactly 7,617 WebPs, tars them, creates
+the `card-images-v2` release and uploads a **1.21 GB** tarball, then deletes the
 local copy. Re-running is safe: an existing asset is replaced with `--clobber`.
 
 The tarball is uncompressed on purpose. These are WebP already, and gzip
@@ -30,17 +32,17 @@ measured at 1.5% off for minutes of CPU on both ends.
 look like it has hung. To watch from another terminal:
 
 ```sh
-gh release view card-images-v1
+gh release view card-images-v2
 ```
 
 Confirm it landed:
 
 ```sh
-gh release view card-images-v1 --json assets \
+gh release view card-images-v2 --json assets \
   -q '.assets[] | "\(.name)  \(.size) bytes"'
 ```
 
-Expect `CardImages.tar  1223966720 bytes`. A size well below that means the
+Expect `CardImages.tar  1211392000 bytes`. A size well below that means the
 upload was cut short — re-run the script.
 
 ### When the art changes
@@ -103,7 +105,7 @@ Or from the run's summary page in a browser.
 **`release not found` in step 2** — step 1 has not finished. The workflow cannot
 download a release that does not exist yet.
 
-**`unpacked N images, expected 7742`** — the tarball and `cards.json` have
+**`unpacked N images, expected 7617`** — the tarball and `cards.json` have
 drifted. Re-run `tools/publish_assets.sh`.
 
 **A disk error, or a job killed mid-build** — the runner has 14 GB and the iOS

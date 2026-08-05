@@ -48,6 +48,6 @@ app.*.map.json
 /android/build/
 /android/.gradle/
 
-# Built by tools/build_assets.py: 7,742 images, 1.20 GB. The two JSON files
+# Built by tools/build_assets.py: 7,617 images, 1.19 GB. The two JSON files
 # beside them are committed; a fresh clone has card data and no art.
 assets/CardImages/

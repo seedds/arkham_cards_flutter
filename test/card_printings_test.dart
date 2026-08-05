@@ -24,16 +24,20 @@ void main() {
       ]);
     });
 
-    test('each printing has distinct art', () {
-      // Every printing must have its own art, or the extra rows show nothing.
+    test('every printing has art, shared where the box does not differ', () {
+      // Each printing must show something, or the extra rows are blank. They no
+      // longer all show something *different*: the art is cropped from the TTS
+      // mod, which stocks a card once under its first printing's code, so a
+      // reprint the mod has no object for borrows the original's picture. The
+      // rows still differ by box and number, which is what they are for.
       final deduction = database.card('01039')!;
       final art = database
           .printings(deduction)
           .map((card) => card.frontImage)
-          .whereType<String>()
           .toList();
       expect(art.length, 5);
-      expect(art.toSet().length, 5);
+      expect(art, everyElement(isNotNull));
+      expect(art.toSet(), contains('01039.webp'));
     });
 
     test('group is reachable from any printing', () {
@@ -85,15 +89,19 @@ void main() {
       }
     });
 
-    test('promo printing keeps its own art and text', () {
-      // The link must not flatten them into the card they reprint: each promo
-      // has its own art and its own printed text, which is why it is a row of
-      // its own rather than a duplicate hidden behind the original.
+    test('promo printing keeps its own identity', () {
+      // The link must not flatten a promo into the card it reprints: it has its
+      // own printed text, illustrator and box, which is why it is a row of its
+      // own rather than a duplicate hidden behind the original.
+      //
+      // Its picture is the one thing it no longer keeps. The TTS mod has no
+      // object for `98004`, so the promo Roland borrows the Core Set Roland's
+      // art -- the same portrait, which is nearer the truth than the placeholder
+      // it would otherwise show.
       final promo = database.card('98004')!;
       final original = database.card('01001')!;
 
-      expect(promo.frontImage, '98004.webp');
-      expect(promo.frontImage, isNot(original.frontImage));
+      expect(promo.frontImage, original.frontImage);
       expect(promo.illustrator, 'Brian Valenzuela');
       expect(promo.flavor, isNot(original.flavor));
       expect(promo.packName, 'The Dirge of Reason');

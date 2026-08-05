@@ -5,7 +5,7 @@
 # tools/publish_assets.sh for why it arrives as a release asset instead.
 #
 # Both jobs in build.yml run this, and both have 14 GB of disk against a
-# 1.12 GiB tarball that expands to another 1.12 GiB, so the tarball is deleted
+# 1.13 GiB tarball that expands to another 1.13 GiB, so the tarball is deleted
 # the moment it has been read.
 set -eu
 
