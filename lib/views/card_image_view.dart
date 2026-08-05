@@ -80,13 +80,34 @@ class CardImageView extends StatelessWidget {
   }
 }
 
-/// What a card with no bundled art shows: its class colour and its name.
+/// What a card with no bundled art shows: its class colour, and its name if
+/// there is room for it.
+///
+/// It sheds its contents as it shrinks, because the same widget serves the
+/// detail screen and a 28pt row thumbnail. At row size the icon and name do not
+/// fit and used to overflow, spilling the card's name down the screen; the row
+/// prints that name 8pt to the right anyway, so a bare tinted rectangle loses
+/// nothing there. The tint is kept at every size, which is what tells a card
+/// with no art apart from the grey box a row shows while decoding.
 class CardPlaceholder extends StatelessWidget {
   const CardPlaceholder({
     required this.card,
     this.cornerRadius = 8,
     super.key,
   });
+
+  static const _iconSize = 20.0;
+  static const _gap = 6.0;
+  static const _horizontalPadding = 6.0;
+
+  /// Icon, gap, and one 11pt line of the name, which measures 11pt tall rather
+  /// than the larger figure its font size might suggest.
+  static const _minHeightForName = _iconSize + _gap + 11;
+
+  /// Both dimensions, since the box is not square: a portrait row thumbnail is
+  /// 28pt tall but only 20pt wide, which the icon overflows sideways even where
+  /// the height is ample.
+  static const _minWidthForIcon = _iconSize + _horizontalPadding * 2;
 
   final model.Card card;
   final double cornerRadius;
@@ -101,29 +122,46 @@ class CardPlaceholder extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(cornerRadius),
       ),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                CupertinoIcons.photo,
-                size: 20,
-                color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxHeight < _iconSize ||
+              constraints.maxWidth < _minWidthForIcon) {
+            return const SizedBox.shrink();
+          }
+
+          final showsName = constraints.maxHeight >= _minHeightForName;
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _horizontalPadding,
               ),
-              const SizedBox(height: 6),
-              Text(
-                card.name,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    CupertinoIcons.photo,
+                    size: _iconSize,
+                    color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                  ),
+                  if (showsName) ...[
+                    const SizedBox(height: _gap),
+                    Text(
+                      card.name,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: CupertinoColors.secondaryLabel.resolveFrom(
+                          context,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     ),
   );

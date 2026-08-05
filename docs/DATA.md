@@ -103,7 +103,11 @@ having art at all is not implied by it having a back, or the reverse.
 - 54 cards have no art on either side
 
 The detail screen shows the card's text for a side with no picture; a row, which
-has no space for text, shows `CardPlaceholder`.
+has no space for text, shows `CardPlaceholder`. That widget sheds its contents as
+it shrinks, so a 28pt row thumbnail is a bare tinted rectangle — the icon and
+name it draws at full size overflow a box that small, and the row prints the name
+beside it anyway. Only `09600a` Café Luna and `10593a` Muddy Fen have neither art
+nor text, so they are the only two cards whose *detail* screen shows it.
 
 ### 3. 169 cards were printed more than once
 

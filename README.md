@@ -101,7 +101,7 @@ over-complicated, the reason is probably on that page.
 ## Testing
 
 ```sh
-flutter test    # 115 tests against the real bundled data
+flutter test    # 120 tests against the real bundled data
 flutter analyze
 ```
 

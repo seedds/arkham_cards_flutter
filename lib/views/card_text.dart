@@ -7,7 +7,8 @@ import 'faction_style.dart';
 ///
 /// The art is cropped from the Tabletop Simulator mod, which has no object for
 /// every card code, so 124 fronts and 50 backs stand in as words. A row has no
-/// space for text and keeps `CardPlaceholder`; this is the detail screen only.
+/// space for text and shows `CardPlaceholder`, which at that size is a bare
+/// tinted rectangle; this is the detail screen only.
 class CardText extends StatelessWidget {
   const CardText({
     required this.card,
