@@ -148,7 +148,9 @@ void main() {
       expect(clubs.printedNumber, '53a');
       expect(hearts.printedNumber, '53b');
 
-      // Each pip is its own picture, or the extra row shows nothing new.
+      // Each variant keeps its own crop -- they really are different pictures,
+      // one pip apart -- so neither borrows the other's art the way a reprint
+      // would. The printed number is still what separates the two rows.
       expect(clubs.frontImage, '88053a.webp');
       expect(hearts.frontImage, '88053b.webp');
     });

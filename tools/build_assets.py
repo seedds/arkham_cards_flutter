@@ -1,36 +1,50 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build the app's bundled assets from the two upstream sources.
+"""Build the app's bundled assets from three local sources.
 
 Reads:
-  arkhamdb-json-data/  - 159 pack files, plus packs/cycles/factions/types
-  arkham-tts/          - one PNG per card code, from tools/extract_tts_images.py
+  arkhamdb-json-data/                     - 159 pack files, plus packs/cycles/types
+  <TTS>/Saves/Arkham SCE <version>.json   - which cards the mod stocks, and where
+  ~/Downloads/arkham/_boxes/              - the 37 SCED campaign boxes, same shape
+  <TTS>/Mods/Images/                      - the sprite sheets the art is cut from
+  ~/Downloads/arkham/_sheets/             - the sheets the boxes name, cached once
 
 Writes:
   assets/cards.json     - every card, merged and annotated
   assets/decks.json     - the 10 Investigator Starter Decks
   assets/CardImages/    - one WebP per referenced code
 
-Neither source is in this repo and neither is version-pinned. `docs/DATA.md` is
-the reference for their shape; most of what looks over-complicated below is
+No source is in this repo and none is version-pinned. `docs/DATA.md` is the
+reference for their shape; most of what looks over-complicated below is
 explained there. The guiding rule: **settle a data quirk here, so the Dart
 model does not carry a special case for it.**
 
-The images are transcoded rather than copied, because Flutter's engine cannot
-decode AVIF and the one package that can offers no decode-time downsampling --
-which is the mechanism the whole memory budget rests on. Each card records the
-WebP filename, so nothing at runtime has to guess an extension or stat the
-filesystem.
+**The save stocks the player cards; the boxes carry everything else.** The
+save file alone reaches 2,174 images -- no location, act, agenda, enemy or
+treachery. The 37 SCED campaign box JSONs are the same TTS object tree and are
+walked by the same `iter_cards`, adding the encounter side. The save is listed
+first, so where a code appears in both (167 do, one with a different sheet) the
+save's printing wins and the player-card crops stay byte-identical. Both box
+directories live outside the TTS tree and are unversioned -- see `docs/DATA.md`
+for what that costs and why it was once cut.
+
+The crop writes WebP directly. The sheets arrive as JPEG, PNG and AVIF, and
+Flutter's engine decodes none of them the way this app needs -- the one AVIF
+package offers no decode-time downsampling, which is the mechanism the whole
+memory budget rests on. Going via a PNG staging tree only cost a generation and
+9 GB of disk. Each card records the WebP filename, so nothing at runtime has to
+guess an extension or stat the filesystem.
 
 Run with the Python that has Pillow, which the system one does not:
 
-    /Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
     /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import glob
 import json
 import multiprocessing
 import os
@@ -40,17 +54,38 @@ import time
 from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TOOLS = os.path.join(HERE, 'tools')
 
 HOME = os.path.expanduser('~')
 JSON_DATA = os.environ.get(
     'ARKHAM_JSON_DATA', os.path.join(HOME, 'Documents/arkhamdb-json-data'))
-IMAGE_SRC = os.environ.get(
-    'ARKHAM_IMAGE_SRC', os.path.join(HOME, 'Downloads/arkham-tts'))
+
+TTS = os.path.join(HOME, 'Library/Tabletop Simulator')
+# Which save to read is worked out by `find_save_file`, not fixed here: the
+# filename carries the mod's version and changes with every release.
+SAVE_GLOB = os.path.join(TTS, 'Saves', 'Arkham SCE *.json')
+SAVE_FILE = os.environ.get('ARKHAM_TTS_SAVE')
+# The sprite sheets TTS itself caches when a box is opened in-game. Keyed by
+# TTS's own cache-name scheme, which `sheet_filename` reproduces.
+SHEET_DIR = os.environ.get('ARKHAM_TTS_SHEETS', os.path.join(TTS, 'Mods/Images'))
+
+# The SCED campaign boxes and the sheets they name. The two caches share
+# exactly one sheet name, and the TTS copy of it is a 14 KB truncation of the
+# 422 KB file here -- so this directory is indexed second and wins the clash,
+# which is what fixes `01693`.
+BOX_DIR = os.environ.get(
+    'ARKHAM_SCED_BOXES', os.path.join(HOME, 'Downloads/arkham/_boxes'))
+EXTRA_SHEET_DIR = os.environ.get(
+    'ARKHAM_SCED_SHEETS', os.path.join(HOME, 'Downloads/arkham/_sheets'))
+
+SWAP_LIST = os.path.join(TOOLS, 'swap_list.json')
 
 ASSETS = os.path.join(HERE, 'assets')
 CARDS_JSON = os.path.join(ASSETS, 'cards.json')
 DECKS_JSON = os.path.join(ASSETS, 'decks.json')
 IMAGE_DEST = os.path.join(ASSETS, 'CardImages')
+# Beside the art rather than in assets/, so it is not bundled into the app.
+CROP_REPORT = os.path.join(HERE, 'build', 'crops.csv')
 
 QUALITY = 80
 # Pillow's WebP effort setting. 4 is its default; 6 costs about three times the
@@ -61,7 +96,38 @@ METHOD = 4
 # moved, and the counts in the tests need re-checking rather than the
 # assertion needing relaxing.
 EXPECTED_CARDS = 5928
-EXPECTED_IMAGES = 7617
+EXPECTED_IMAGES = 7618
+
+# The object names TTS gives a card.
+CARD_NAMES = ('Card', 'CardCustom')
+
+# The types whose art is printed landscape. The same rule as `Card.isLandscape`
+# in the app, and the reason no perceptual hash is needed here: checked against
+# the 7,742 images of an older source, it agreed on 7,739 -- so it is a better
+# orientation reference than the pictures were, and it needs no pictures.
+LANDSCAPE_TYPES = ('investigator', 'act', 'agenda')
+
+# Below this a crop is not a card. It catches the stale-grid case handled in
+# `cell_grid`, and any future sheet whose layout has changed: 54 slivers went
+# unnoticed into an earlier pipeline because nothing downstream checked.
+MIN_CARD_PX = 300
+
+# What a card's width-over-height comes out at, either way up. Real art runs
+# 750x1050 and 1050x750, so 1.40; the band allows the handful of odd sizes
+# (716x1030 is 1.44) without admitting a half-card.
+CARD_RATIO = (1.28, 1.52)
+
+# TTS only sets `UniqueBack` on some of the cards that really have their own
+# back, so a back is also kept when its image merely differs from the face.
+# Guarding that with a share count keeps out the generic backs -- 30 URLs
+# covering 11,909 cards between them. Measured against arkhamhorror.app, which
+# publishes which cards have two sides:
+#
+#   rule                                    emitted   missed
+#   UniqueBack only                            4118      182
+#   back != face                              13455        0  (9813 spurious)
+#   UniqueBack or (differs and shared <= 20)   4318       26
+GENERIC_BACK_THRESHOLD = 20
 
 # The 10 Investigator Starter Deck products, in release order. Each is a pack
 # of its own holding one investigator, that deck's cards at level 0, and a set
@@ -79,10 +145,6 @@ STARTER_PACKS = ('nat', 'tom', 'har', 'car', 'win',
 # band is wide because the exact figure is not the invariant -- a deck of 12
 # or 60 would mean the `xp` convention this derivation rests on has moved.
 DECK_SIZE_RANGE = (30, 40)
-
-# extract_tts_images.py writes PNG and nothing else: it crops from sprite
-# sheets, so a lossy intermediate would cost a generation for no reason.
-EXTENSIONS = ('.png',)
 
 # Promo printings upstream does not link to the card they reprint, mapped to
 # that card. Every one is a standalone record carrying its own name, type and
@@ -119,9 +181,70 @@ CODE = re.compile(r'^\d+([a-z]?)$')
 def log(message):
     print(message, flush=True)
 
-def webp_name(filename):
-    """The bundled name for an extracted image: `01001.png` -> `01001.webp`."""
-    return os.path.splitext(filename)[0] + '.webp'
+def webp_name(stem):
+    """The bundled filename for an image stem: `01001` -> `01001.webp`."""
+    return stem + '.webp'
+
+def image_for(images, stem, fallback):
+    """The bundled filename for a stem, or for the card it reprints, or None."""
+    for candidate in (stem, fallback):
+        if candidate and candidate in images:
+            return webp_name(candidate)
+    return None
+
+def find_save_file():
+    """The newest Arkham SCE save, or None.
+
+    The filename carries the mod's version, so it moves with every release and
+    cannot be fixed in the source. The version is compared as a tuple of
+    integers rather than as a string, because `4.10.0` is newer than `4.8.0`
+    and sorts before it as text. A name that does not parse still sorts, just
+    below every one that does, so an oddly-named save is used only when it is
+    the sole candidate.
+    """
+    if SAVE_FILE:
+        return SAVE_FILE if os.path.isfile(SAVE_FILE) else None
+
+    def version(path):
+        digits = re.findall(r'\d+', os.path.basename(path))
+        return tuple(int(d) for d in digits)
+
+    candidates = sorted(glob.glob(SAVE_GLOB), key=version)
+    return candidates[-1] if candidates else None
+
+def sheet_filename(url):
+    """TTS's cache name for a URL: punctuation stripped, no extension."""
+    return re.sub(r'[\/\:\-\_\.\?\=\%]', '', url)
+
+def index_sheets():
+    """Every cached sprite sheet, by the cache name TTS stored it under.
+
+    Both caches, with EXTRA_SHEET_DIR indexed second so its copy wins the one
+    name they share -- the TTS copy of that sheet is truncated.
+    """
+    sheets = {}
+    for directory in (SHEET_DIR, EXTRA_SHEET_DIR):
+        if not os.path.isdir(directory):
+            continue
+        for path in glob.glob(os.path.join(directory, '*')):
+            sheets[os.path.splitext(os.path.basename(path))[0]] = path
+    log('  {} sprite sheets cached'.format(len(sheets)))
+    return sheets
+
+def load_boxes():
+    """The SCED campaign boxes, sorted by filename for a stable walk order.
+
+    `library.json` is the mod's box manifest -- names and cover art, no cards
+    -- so it is skipped rather than walked for nothing.
+    """
+    boxes = []
+    for path in sorted(glob.glob(os.path.join(BOX_DIR, '*.json'))):
+        if os.path.basename(path) == 'library.json':
+            continue
+        with open(path, encoding='utf8') as handle:
+            boxes.append(json.load(handle))
+    log('  {} campaign boxes'.format(len(boxes)))
+    return boxes
 
 def printed_number(card):
     """The number as it reads on the card, with the code's letter appended.
@@ -278,22 +401,211 @@ def load_reference():
         len(packs), len(cycles), len(encounters)))
     return pack_by_code, encounter_by_code
 
-def index_images():
-    """Map each card code to its best available image filename."""
-    best = {}
-    for name in os.listdir(IMAGE_SRC):
-        stem, extension = os.path.splitext(name)
-        extension = extension.lower()
-        if extension not in EXTENSIONS:
-            continue
-        current = best.get(stem)
-        if current is None or rank(extension) < rank(os.path.splitext(current)[1]):
-            best[stem] = name
-    log('  {} images on disk'.format(len(best)))
-    return best
+def wanted_stems(cards):
+    """Every image stem the app could want, mapped to whether it is landscape.
 
-def rank(extension):
-    return EXTENSIONS.index(extension.lower())
+    Run after `resolve_reprints`, so a reprint has the `type_code` its
+    orientation comes from. A front's stem is the card's `code` and a back's is
+    `back_link` or `<code>b`, which is what `build_records` looks images up by.
+    """
+    wanted = {}
+    for code, card in cards.items():
+        landscape = card.get('type_code') in LANDSCAPE_TYPES
+        wanted[code] = landscape
+        back = card.get('back_link')
+        if not back and card.get('double_sided'):
+            back = code + 'b'
+        if back:
+            wanted[back] = landscape
+    return wanted
+
+def card_code(node):
+    """The ArkhamDB code from an object's GMNotes, or None."""
+    notes = node.get('GMNotes') or ''
+    if not notes.strip().startswith('{'):
+        return None
+    try:
+        meta = json.loads(notes)
+    except ValueError:
+        return None
+    return meta.get('id') if isinstance(meta, dict) else None
+
+def iter_cards(node, parent_deck=None):
+    """Yield every card object, with the CustomDeck entry describing its sheet.
+
+    TTS does not refresh a card's own `CustomDeck` while it sits in a bag, so
+    the entry is looked up in the nearest enclosing deck as a fallback -- which
+    is what the mod's own AllEncounterCardsBag script does.
+    """
+    if isinstance(node, dict):
+        inherited = node.get('CustomDeck') or parent_deck
+
+        card_id = node.get('CardID')
+        if node.get('Name') in CARD_NAMES and card_id is not None:
+            key = str(card_id)[:-2]
+            own = node.get('CustomDeck') or {}
+            yield {
+                'code': card_code(node),
+                'card_id': card_id,
+                'entry': own.get(key) or (parent_deck or {}).get(key),
+                'sideways': bool(node.get('SidewaysCard')),
+            }
+
+        for key, value in node.items():
+            if key == 'CustomDeck':
+                continue
+            yield from iter_cards(value, inherited)
+
+    elif isinstance(node, list):
+        for value in node:
+            yield from iter_cards(value, parent_deck)
+
+def plan_crops(roots, wanted):
+    """Build the crop list: one task per image to write.
+
+    `roots` is the save followed by the campaign boxes; `iter_cards` walks a
+    list as readily as a dict, and document order decides which printing of a
+    shared code wins, so the save's player cards are never re-cut by a box.
+
+    Deduplicated on (code, CardID, sheet), so an object the mod merely repeats
+    collapses to one task while a genuinely different printing keeps its own.
+    Only codes the app wants survive, which drops the mod's minicards,
+    parallel investigators and extra printings.
+    """
+    variants = defaultdict(list)
+    seen = set()
+    skipped = Counter()
+    found = 0
+
+    for card in iter_cards(roots):
+        code, entry = card['code'], card['entry']
+        if not code:
+            skipped['no card code in GMNotes'] += 1
+            continue
+        if entry is None:
+            skipped['no CustomDeck entry'] += 1
+            continue
+
+        face = entry.get('FaceURL')
+        if not face:
+            skipped['no FaceURL'] += 1
+            continue
+
+        fingerprint = (code, card['card_id'], face)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+
+        variants[code].append({
+            'code': code,
+            'index': card['card_id'] % 100,
+            'width': entry.get('NumWidth') or 1,
+            'height': entry.get('NumHeight') or 1,
+            'face': face,
+            'back': entry.get('BackURL'),
+            'unique_back': bool(entry.get('UniqueBack')),
+            'sideways': card['sideways'],
+        })
+        found += 1
+
+    log('  {} card objects in the save and boxes'.format(found))
+    resolve_sides(variants)
+
+    tasks = []
+    for code in sorted(variants):
+        # Document order decides which printing wins: the mod lists the
+        # canonical one first, and only that one is named after the bare code.
+        card = variants[code][0]
+        if code in wanted:
+            tasks.append(dict(card, url=card['face'], stem=code,
+                              landscape=wanted[code]))
+        back_stem = code + 'b'
+        if card['back'] and back_stem in wanted:
+            tasks.append(dict(card, url=card['back'], stem=back_stem,
+                              landscape=wanted[back_stem]))
+
+    log('  {} codes seen, {} images to crop'.format(len(variants), len(tasks)))
+    for reason, count in skipped.most_common():
+        log('    skipped {:<24} {}'.format(reason, count))
+    return tasks
+
+def resolve_sides(variants):
+    """Drop the backs that are not really backs, and swap the reversed pairs.
+
+    For a two-sided card TTS's `FaceURL` is not always the side the rest of the
+    world calls the front -- locations show unrevealed, ArkhamDB shows revealed
+    -- and no field in the metadata says which. `swap_list.json` records the
+    answer, measured once by comparing the images themselves.
+    """
+    with open(SWAP_LIST, encoding='utf8') as handle:
+        swapped_codes = set(json.load(handle)['swapped'])
+
+    back_usage = Counter()
+    for group in variants.values():
+        for card in group:
+            if card['back']:
+                back_usage[card['back']] += 1
+
+    kept = recovered = swapped = 0
+    for code, group in variants.items():
+        for card in group:
+            back = card['back']
+            if not back:
+                continue
+            if card['unique_back']:
+                kept += 1
+            elif (back != card['face']
+                    and back_usage[back] <= GENERIC_BACK_THRESHOLD):
+                recovered += 1
+            else:
+                card['back'] = None
+                continue
+
+            if code in swapped_codes:
+                card['face'], card['back'] = card['back'], card['face']
+                swapped += 1
+
+    log('  backs: {} flagged by TTS, {} recovered, {} pairs swapped'.format(
+        kept, recovered, swapped))
+
+def is_card_shaped(size):
+    ratio = max(size) / min(size)
+    return min(size) >= MIN_CARD_PX and CARD_RATIO[0] < ratio < CARD_RATIO[1]
+
+def cell_grid(sheet, task):
+    """The grid to slice this sheet by, which is not always the declared one.
+
+    54 cards came out as slivers because their sheet holds a single card but
+    declares a `3x2` or `7x2` grid -- an edit upstream that split a sheet
+    without updating NumWidth/NumHeight.
+
+    The declared grid is believed whenever it yields a card-shaped cell, and
+    only a grid that does not is overridden. Testing the *sheet* instead does
+    not work: a 4x2 sheet of 750x1050 cards is 3000x2100, whose 1.43 is as
+    card-shaped as a card, so 684 whole sheets were written as single cards.
+    """
+    width = task['width']
+    height = task['height']
+    cell = (sheet.width // width, sheet.height // height)
+    if is_card_shaped(cell) or not is_card_shaped(sheet.size):
+        return width, height, task['index']
+    return 1, 1, 0
+
+def crop(sheet, task):
+    """Cut one card from its sheet, upright."""
+    width, height, index = cell_grid(sheet, task)
+    cell_w = sheet.width // width
+    cell_h = sheet.height // height
+    row, column = divmod(index, width)
+    left, top = column * cell_w, row * cell_h
+    cell = sheet.crop((left, top, left + cell_w, top + cell_h))
+
+    # Investigator and act/agenda art is stored rotated and flagged
+    # `SidewaysCard`. The flag is not reliable on its own -- 26 crops came out
+    # the wrong way up with it alone -- so the card's type has the last word.
+    if (cell.width > cell.height) != task['landscape']:
+        cell = cell.rotate(90, expand=True)
+    return cell
 
 def link_promo_editions(cards):
     """Point each promo in PROMO_EDITIONS at the card it is a printing of.
@@ -376,8 +688,9 @@ def build_records(cards, packs, encounters, images):
 
       sort      - cycle, then pack, then position within the pack.
 
-    The two image fields name the WebP that `transcode_images` writes, not the
-    PNG the extraction leaves, so the app never has to map one to the other.
+    `images` is the set of stems `crop_images` managed to write. The two image
+    fields name the WebP rather than the stem, so the app never has to add an
+    extension or stat the filesystem.
 
     Every record is listable. Reprints and the far halves of `back_link`
     pairs were once filtered out of the list, on the grounds that they
@@ -420,8 +733,8 @@ def build_records(cards, packs, encounters, images):
         # picture.
         reprint_of = card.get('duplicate_of') or card.get('alternate_of')
 
-        front = images.get(code) or images.get(reprint_of)
-        record['front_image'] = webp_name(front) if front else None
+        front = image_for(images, code, reprint_of)
+        record['front_image'] = front
         if front is None:
             counts['no front image'] += 1
 
@@ -431,10 +744,10 @@ def build_records(cards, packs, encounters, images):
         elif card.get('double_sided'):
             back_code = code + 'b'
 
-        back = images.get(back_code) if back_code else None
-        if back is None and back_code and reprint_of:
-            back = images.get(reprint_of + 'b')
-        record['back_image'] = webp_name(back) if back else None
+        back = image_for(
+            images, back_code,
+            (reprint_of + 'b') if reprint_of else None) if back_code else None
+        record['back_image'] = back
         record['back_code'] = back_code
         if back_code and back is None:
             counts['no back image'] += 1
@@ -539,87 +852,132 @@ def build_decks(records):
     log('  {} of {} starter decks built'.format(len(decks), len(STARTER_PACKS)))
     return decks
 
-def transcode(job):
-    """Re-encode one upstream image as WebP. Returns (name, bytes) or (name, None)."""
-    source, destination = job
-    try:
-        from PIL import Image
+def crop_sheet(job):
+    """Cut every card wanted from one sprite sheet, writing each as WebP.
 
-        with Image.open(source) as image:
-            image.load()
-            # Card art has no alpha, and RGB avoids WebP writing an alpha
-            # channel for images whose mode is merely capable of one.
-            image.convert('RGB').save(
-                destination, 'WEBP', quality=QUALITY, method=METHOD)
-        return os.path.basename(source), os.path.getsize(destination)
-    except Exception as error:  # noqa: BLE001 - reported, not swallowed
-        print('  {}: {}: {}'.format(
-            os.path.basename(source), type(error).__name__, error),
-            file=sys.stderr)
-        return os.path.basename(source), None
+    One sheet per job rather than one card, because a sheet is up to 7500x7350
+    and decoding it once for each of the 40 cards on it dominates the run.
 
-def transcode_images(records, images, force):
-    """Re-encode as WebP only the images some card actually points at.
-
-    The extraction can write images no card record points at -- cards the TTS
-    mod carries and this data dump does not -- which would otherwise be dead
-    weight in the bundle.
+    Returns a (stem, status) pair per task, `'ok'` or the reason it failed. A
+    sheet that will not open fails all of its cards rather than raising, so one
+    truncated file in the cache does not end the build.
     """
-    # Every image index entry is keyed by stem, so no two source files can
-    # collapse onto one WebP name.
-    source_by_name = {webp_name(name): name for name in images.values()}
+    path, tasks = job
+    from PIL import Image
 
-    wanted = set()
-    for record in records:
-        for key in ('front_image', 'back_image'):
-            if record[key]:
-                wanted.add(record[key])
+    # Sprite sheets are legitimately huge (7500x7350 and up).
+    Image.MAX_IMAGE_PIXELS = None
 
+    try:
+        with Image.open(path) as sheet:
+            sheet.load()
+            results = []
+            for task in tasks:
+                cell = crop(sheet, task)
+                if not is_card_shaped(cell.size):
+                    results.append((task['stem'],
+                                    'implausible crop {}x{}'.format(*cell.size)))
+                    continue
+                # Card art has no alpha, and RGB avoids WebP writing an alpha
+                # channel for images whose mode is merely capable of one.
+                cell.convert('RGB').save(
+                    os.path.join(IMAGE_DEST, webp_name(task['stem'])),
+                    'WEBP', quality=QUALITY, method=METHOD)
+                results.append((task['stem'], 'ok'))
+            return results
+    except Exception as error:  # noqa: BLE001 - reported, not swallowed
+        reason = '{}: {}'.format(type(error).__name__, error)[:80]
+        return [(task['stem'], reason) for task in tasks]
+
+def crop_images(tasks, sheets, force):
+    """Crop every task that is not already up to date. Returns its status per stem.
+
+    Incremental on the sheet's own timestamp: a WebP newer than the sheet it
+    came from is left alone, so a run that only needs one changed box does not
+    re-encode all of them.
+    """
     os.makedirs(IMAGE_DEST, exist_ok=True)
     existing = set(os.listdir(IMAGE_DEST))
 
-    # Images no longer referenced would otherwise linger and be shipped, since
-    # the asset directory is declared wholesale in pubspec.
-    for stale in existing - wanted:
-        os.remove(os.path.join(IMAGE_DEST, stale))
-
-    jobs = []
-    skipped = 0
-    for name in sorted(wanted):
-        source = os.path.join(IMAGE_SRC, source_by_name[name])
-        destination = os.path.join(IMAGE_DEST, name)
-        # Transcoding all of them takes a couple of minutes, which is long
-        # enough to be worth not repeating for the sake of one changed card.
-        if (not force and name in existing
-                and os.path.getmtime(destination) >= os.path.getmtime(source)):
-            skipped += 1
+    status = {}
+    by_sheet = defaultdict(list)
+    missing = 0
+    for task in tasks:
+        path = sheets.get(sheet_filename(task['url']))
+        if path is None:
+            status[task['stem']] = 'sheet not cached'
+            missing += 1
             continue
-        jobs.append((source, destination))
 
-    log('  {} referenced, {} removed, {} to transcode, {} up to date'.format(
-        len(wanted), len(existing - wanted), len(jobs), skipped))
+        name = webp_name(task['stem'])
+        destination = os.path.join(IMAGE_DEST, name)
+        if (not force and name in existing
+                and os.path.getmtime(destination) >= os.path.getmtime(path)):
+            status[task['stem']] = 'ok'
+            continue
+        by_sheet[path].append(task)
 
-    failed = []
-    if jobs:
+    pending = sum(len(group) for group in by_sheet.values())
+    log('  {} to crop from {} sheets, {} up to date, {} sheets not cached'.format(
+        pending, len(by_sheet), len(tasks) - pending - missing, missing))
+
+    if by_sheet:
+        jobs = sorted(by_sheet.items())
         started = time.monotonic()
+        done = 0
         with multiprocessing.Pool() as pool:
-            for index, (name, size) in enumerate(
-                    pool.imap_unordered(transcode, jobs, chunksize=16), start=1):
-                if size is None:
-                    failed.append(name)
-                if index % 500 == 0 or index == len(jobs):
-                    log('    {}/{}  {:.0f}s'.format(
-                        index, len(jobs), time.monotonic() - started))
+            for number, results in enumerate(
+                    pool.imap_unordered(crop_sheet, jobs), start=1):
+                status.update(results)
+                done += len(results)
+                if number % 100 == 0 or number == len(jobs):
+                    log('    sheet {}/{}  {} cards  {:.0f}s'.format(
+                        number, len(jobs), done, time.monotonic() - started))
 
-    if failed:
-        log('  ! {} images failed to transcode: {}'.format(
-            len(failed), failed[:10]))
-        return None
+    return status
+
+def write_crop_report(status, tasks):
+    """Every crop and how it went, for working out why one card looks wrong.
+
+    Counting failures is not enough to tell a card the mod does not carry from
+    one whose cached sheet arrived truncated, and only the second is worth
+    acting on.
+    """
+    os.makedirs(os.path.dirname(CROP_REPORT), exist_ok=True)
+    fields = ['stem', 'code', 'cell', 'grid', 'sheet', 'status']
+    with open(CROP_REPORT, 'w', newline='', encoding='utf8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for task in sorted(tasks, key=lambda task: task['stem']):
+            writer.writerow({
+                'stem': task['stem'],
+                'code': task['code'],
+                'cell': task['index'],
+                'grid': '{}x{}'.format(task['width'], task['height']),
+                'sheet': task['url'],
+                'status': status.get(task['stem'], 'not attempted'),
+            })
+
+def prune_images(records):
+    """Delete any bundled image no card record names.
+
+    The asset directory is declared wholesale in pubspec, so an image left over
+    from an earlier build -- one whose card has since lost its art, or the whole
+    encounter side of a previous pipeline -- would ship with nothing showing it.
+    """
+    referenced = {
+        record[key] for record in records
+        for key in ('front_image', 'back_image') if record[key]
+    }
+    stale = set(os.listdir(IMAGE_DEST)) - referenced
+    for name in stale:
+        os.remove(os.path.join(IMAGE_DEST, name))
 
     bundled = os.listdir(IMAGE_DEST)
     total = sum(os.path.getsize(os.path.join(IMAGE_DEST, name))
                 for name in bundled)
-    log('  {} images, {:.2f} GB'.format(len(bundled), total / 1e9))
+    log('  {} images, {:.2f} GB, {} stale removed'.format(
+        len(bundled), total / 1e9, len(stale)))
 
     if len(bundled) != EXPECTED_IMAGES:
         log('  ! expected {} images, bundled {}. If the upstream data '
@@ -648,15 +1006,29 @@ def check_images_present(records):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        '--force', action='store_true', help='re-transcode images that exist')
+        '--force', action='store_true', help='re-crop images that exist')
     parser.add_argument(
-        '--skip-images', action='store_true', help='rebuild the JSON only')
+        '--skip-images', action='store_true',
+        help='rebuild the JSON only, keeping the art already bundled')
     arguments = parser.parse_args()
 
-    for path in (JSON_DATA, IMAGE_SRC):
-        if not os.path.isdir(path):
-            log('Missing source: {}'.format(path))
-            return 1
+    if not os.path.isdir(JSON_DATA):
+        log('Missing source: {}'.format(JSON_DATA))
+        return 1
+    if not os.path.isdir(SHEET_DIR):
+        log('Missing source: {}'.format(SHEET_DIR))
+        return 1
+    if not arguments.skip_images:
+        for source in (BOX_DIR, EXTRA_SHEET_DIR):
+            if not os.path.isdir(source):
+                log('Missing source: {}'.format(source))
+                return 1
+
+    save = find_save_file()
+    if save is None:
+        log('No Arkham SCE save found at {}'.format(SAVE_GLOB))
+        log('Set ARKHAM_TTS_SAVE to name one explicitly.')
+        return 1
 
     os.makedirs(ASSETS, exist_ok=True)
 
@@ -667,8 +1039,44 @@ def main():
     resolve_reprints(cards)
     packs, encounters = load_reference()
 
-    log('Indexing images')
-    images = index_images()
+    if arguments.skip_images:
+        # The bundle stands in for a crop that has not been run, so the JSON
+        # keeps naming exactly the art already there.
+        log('Skipping the crop; taking the images already bundled')
+        images = {os.path.splitext(name)[0]
+                  for name in os.listdir(IMAGE_DEST)} if os.path.isdir(
+                      IMAGE_DEST) else set()
+        log('  {} images already bundled'.format(len(images)))
+    else:
+        log('Reading Tabletop Simulator')
+        log('  save: {}'.format(os.path.basename(save)))
+        with open(save, encoding='utf8') as handle:
+            save_data = json.load(handle)
+        boxes = load_boxes()
+        sheets = index_sheets()
+
+        log('Planning the crop')
+        # The save first: 167 codes appear in a box too, and document order
+        # decides which printing wins, so this keeps every player-card crop
+        # exactly what the save-only pipeline produced.
+        tasks = plan_crops([save_data] + boxes, wanted_stems(cards))
+
+        log('Cropping')
+        status = crop_images(tasks, sheets, arguments.force)
+        write_crop_report(status, tasks)
+        images = {stem for stem, state in status.items() if state == 'ok'}
+
+        failed = sorted((stem, state) for stem, state in status.items()
+                        if state != 'ok')
+        log('  {} cropped, {} failed, report at {}'.format(
+            len(images), len(failed), CROP_REPORT))
+        # Named, not just counted: the count alone cannot tell a card the mod
+        # does not carry from one whose cached sheet arrived truncated, and only
+        # the second is worth acting on. `01693` is the standing example -- its
+        # sheet in the TTS cache is 14 KB against the 422 KB it should be, so it
+        # will not open at all.
+        for stem, state in failed[:20]:
+            log('    {:<9} {}'.format(stem, state[:60]))
 
     log('Building records')
     records = build_records(cards, packs, encounters, images)
@@ -676,12 +1084,9 @@ def main():
     log('Building starter decks')
     decks = build_decks(records)
 
-    if arguments.skip_images:
-        log('Skipping images')
-    else:
-        log('Transcoding images')
-        if transcode_images(records, images, arguments.force) is None:
-            return 1
+    if not arguments.skip_images:
+        log('Pruning the bundle')
+        prune_images(records)
 
     if not check_images_present(records):
         return 1

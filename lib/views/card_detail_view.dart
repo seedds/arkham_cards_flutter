@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 
 import '../models/card.dart' as model;
@@ -9,13 +11,12 @@ import 'card_row.dart';
 /// One card's art, and its other versions underneath.
 ///
 /// Pages sideways through the list it was opened from, so a swipe moves to the
-/// next card in the order just read. The bar's title follows the pager, which is
-/// the one thing on this screen that names the 27 cards holding no art.
+/// next card in the order just read. The bar's title follows the pager.
 ///
-/// The bar costs 44pt of the art. On a 6.3-inch screen a portrait card still
-/// gets the 505pt it wants; on a 4.7-inch one the height clamp in `_CardPage`
-/// starts biting and it gets 449 of the 480 it asks for. Measured, and accepted:
-/// a screen with no visible way off it is worse than a card 31pt shorter.
+/// The bar costs 44pt of the art, which is accepted: a screen with no visible
+/// way off it is worse than a slightly shorter card. What the art actually gets
+/// is decided by `_CardPage`, which caps it at a fraction of the height rather
+/// than sizing it from the width -- see `_maximumArtFraction`.
 ///
 /// The edge swipe still works and is still worth pinning. The bar's button is an
 /// addition, not a replacement: `CupertinoPageRoute`'s own back gesture beats a
@@ -93,9 +94,9 @@ class _CardDetailViewState extends State<CardDetailView> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      // Absent on the 3,691 one-sided cards, so the centred title's available
+      // Absent on the 4,719 one-sided cards, so the centred title's available
       // width changes as you page and a long name can gain or lose a character.
-      // Accepted: a disabled control on 62% of cards is the worse trade.
+      // Accepted: a disabled control on 80% of cards is the worse trade.
       trailing: _sequence[_index].hasBack
           ? CupertinoButton(
               // Metrics as the cards list's Filter button, so the bar's
@@ -159,6 +160,15 @@ class _CardPageState extends State<_CardPage> {
   /// Enough for about two rows.
   static const _minimumPickerHeight = 96.0;
 
+  /// The most of the content height a card's art may take.
+  ///
+  /// Without it the art is sized from the width alone, which on a phone happens
+  /// to come to about this anyway but on an iPad overshoots badly: 1.4 times a
+  /// 927pt width is more than the screen, so the clamp below used to hand the
+  /// picker exactly its floor and cut the second row in half. Applied to every
+  /// card, reprinted or not, so the art is the same size on both.
+  static const _maximumArtFraction = 0.70;
+
   late model.Card _selected = widget.card;
   late final List<model.Card> _printings = widget.database.printings(
     widget.card,
@@ -178,6 +188,14 @@ class _CardPageState extends State<_CardPage> {
       // A height multiplier, not the width-over-height ratio: portrait art is
       // 1.4 times as tall as it is wide.
       final aspect = _selected.isLandscape ? 1 / 1.4 : 1.4;
+      // The fraction is the tighter of the two only while `available` is at
+      // least 320pt; below that -- a small phone in landscape -- 30% is under
+      // the picker's floor, and the `reserved` term is what still leaves it two
+      // rows.
+      final artHeight = (width * aspect).clamp(
+        0.0,
+        math.min<double>(available * _maximumArtFraction, available - reserved),
+      );
 
       return Padding(
         // No bottom inset: it sat outside the picker's ListView, so its 16pt
@@ -189,10 +207,7 @@ class _CardPageState extends State<_CardPage> {
           children: [
             SizedBox(
               width: width,
-              // The clamp only bites in landscape, where an unclamped portrait
-              // card would want more than the whole screen and leave the rows
-              // nothing.
-              height: (width * aspect).clamp(0.0, available - reserved),
+              height: artHeight,
               child: _PrintingView(
                 printing: _selected,
                 showingBack: widget.showingBack,
@@ -276,13 +291,12 @@ class _PrintingView extends StatelessWidget {
   Widget build(BuildContext context) {
     final filename = showingBack ? printing.backImage : printing.frontImage;
     // A side the data describes but has no picture for stands in as text. Both
-    // sides can be in that position: the TTS mod the art is cropped from has no
-    // object for every code, so 124 fronts and 50 backs have only words.
-    final text = filename != null
-        ? null
-        : showingBack
-        ? printing.backText
-        : printing.text;
+    // sides can be in that position: the crop misses 124 fronts and 50 backs,
+    // mostly sides the mod prints as the reverse of another card.
+    //
+    // `CardText` also serves a card with no text on the side being shown,
+    // printing its identifying details instead -- so this is chosen whenever
+    // there is no picture, not only when there is something to read.
     final flavor = showingBack ? printing.backFlavor : printing.flavor;
 
     return GestureDetector(
@@ -291,32 +305,43 @@ class _PrintingView extends StatelessWidget {
       child: Semantics(
         button: printing.hasBack,
         hint: printing.hasBack ? 'Tap to turn the card over' : null,
-        child: text != null
+        child: filename == null
             // Its own scroll view: the screen no longer provides one and the
             // longest back runs to 935 characters.
             ? SingleChildScrollView(
                 child: CardText(
                   card: printing,
-                  text: text,
+                  text: showingBack ? printing.backText : printing.text,
                   flavor: flavor,
                 ),
               )
-            : DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x54000000),
-                      blurRadius: 12,
-                      offset: Offset(0, 3),
+            // Shaped like the card and centred, rather than filling the box it
+            // is given. The height is capped, so on a wide screen the box is
+            // wider than the art; the shadow and the 12pt corners are drawn
+            // here while the art inside is `BoxFit.contain`, so without this
+            // they would sit out on the letterboxing instead of on the card's
+            // own edges.
+            : Center(
+                child: AspectRatio(
+                  aspectRatio: cardAspectRatio(printing),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x54000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: CardImageView(
-                  card: printing,
-                  filename: filename,
-                  maxPixels: _PrintingView.maxPixels,
-                  cornerRadius: 12,
+                    child: CardImageView(
+                      card: printing,
+                      filename: filename,
+                      maxPixels: _PrintingView.maxPixels,
+                      cornerRadius: 12,
+                    ),
+                  ),
                 ),
               ),
       ),

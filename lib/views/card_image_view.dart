@@ -11,10 +11,10 @@ const cardImageDirectory = 'assets/CardImages';
 /// Investigator, act and agenda art is landscape; everything else is portrait.
 double cardAspectRatio(model.Card card) => card.isLandscape ? 1.4 : 1 / 1.4;
 
-/// One card's art, with a placeholder for the 27 cards that have none.
+/// One card's art, with a placeholder for the 54 cards that have none.
 ///
 /// [maxPixels] is the longest edge to decode to, which is the whole of this
-/// app's memory strategy. The bundle holds 7,742 images averaging 750x1050;
+/// app's memory strategy. The bundle holds 7,618 images averaging 750x1050;
 /// decoding one at full size costs about 3 MB, so a list that decoded them as
 /// drawn would exhaust memory within a screen or two. **Every view showing card
 /// art must pass a sensible value** -- there is no full-size path any more,
@@ -83,12 +83,14 @@ class CardImageView extends StatelessWidget {
 /// What a card with no bundled art shows: its class colour, and its name if
 /// there is room for it.
 ///
-/// It sheds its contents as it shrinks, because the same widget serves the
-/// detail screen and a 28pt row thumbnail. At row size the icon and name do not
-/// fit and used to overflow, spilling the card's name down the screen; the row
-/// prints that name 8pt to the right anyway, so a bare tinted rectangle loses
-/// nothing there. The tint is kept at every size, which is what tells a card
-/// with no art apart from the grey box a row shows while decoding.
+/// Reached from a row, not from the detail screen: a side with no picture there
+/// goes to `CardText`, which has the card's words or, failing those, its
+/// printing details. This still sheds its contents as it shrinks, because it is
+/// also given a 28pt row thumbnail and a larger deck row. At row size the icon
+/// and name do not fit and used to overflow, spilling the card's name down the
+/// screen; the row prints that name 8pt to the right anyway, so a bare tinted
+/// rectangle loses nothing there. The tint is kept at every size, which is what
+/// tells a card with no art apart from the grey box a row shows while decoding.
 class CardPlaceholder extends StatelessWidget {
   const CardPlaceholder({
     required this.card,

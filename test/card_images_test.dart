@@ -21,10 +21,12 @@ void main() {
     expect(missing, isEmpty, reason: 'not in bundle: ${missing.take(5)}');
   });
 
-  test('almost every card has art', () {
-    // 54 of 5,928 cards have no bundled art: the TTS sprite sheets the pipeline
-    // crops from do not carry every printing. Pinned so that a regression in
-    // the image pipeline, which would push this number up, fails the build.
+  test('the player cards have art', () {
+    // 54 of 5,928 cards have no bundled art: the pipeline crops from the TTS
+    // mod's save file and the 37 SCED campaign boxes, and these 54 are the
+    // cards neither stocks -- mostly story and act/location halves the mod
+    // prints as the reverse of another card, like the Heretic/Unfinished
+    // Business pairs. Pinned so a regression that loses more fails the build.
     final withoutArt = database.all
         .where((card) => card.frontImage == null && card.backImage == null)
         .toList();
@@ -33,13 +35,32 @@ void main() {
       54,
       reason: 'missing: ${withoutArt.take(5).map((card) => card.code)}',
     );
+
+    // The types the save file does carry, which are what a deck is built from.
+    // A player card with no picture would be the visible regression.
+    const stocked = {'asset', 'event', 'skill', 'investigator'};
+    final missingPlayerArt = database.all
+        .where(
+          (card) =>
+              stocked.contains(card.typeCode) &&
+              card.isPlayerCard &&
+              card.frontImage == null,
+        )
+        .toList();
+    expect(
+      missingPlayerArt.length,
+      lessThan(60),
+      reason: 'no art: ${missingPlayerArt.take(5).map((card) => card.code)}',
+    );
   });
 
-  test('a card with no picture has words instead', () {
+  test('a card with no picture has something to show instead', () {
     // The detail screen falls back to card text for a side it has no picture
-    // for, so a card with neither would show only its name. Every one of the 54
-    // has text today; a new card that had neither would be a blank screen.
-    final blank = database.all
+    // of, and to the card's identifying details when there is no text either.
+    // With the campaign boxes read, every artless card has text: the count
+    // was 101 while the encounter art was out, and a rise above 0 means a
+    // fallback nobody has looked at.
+    final wordless = database.all
         .where(
           (card) =>
               card.frontImage == null &&
@@ -48,9 +69,9 @@ void main() {
         )
         .toList();
     expect(
-      blank,
+      wordless,
       isEmpty,
-      reason: 'nothing to show for: ${blank.take(5).map((card) => card.code)}',
+      reason: 'nothing to show for: ${wordless.take(5).map((card) => card.code)}',
     );
   });
 
@@ -69,7 +90,7 @@ void main() {
         .map((file) => file.uri.pathSegments.last)
         .toSet();
 
-    expect(bundled.length, 7617);
+    expect(bundled.length, 7618);
     expect(bundled.difference(referenced), isEmpty);
     expect(referenced.difference(bundled), isEmpty);
   });
@@ -77,9 +98,9 @@ void main() {
   test('no image is a sliver of a card', () {
     // The art is cropped out of TTS sprite sheets by a declared grid, and a
     // sheet whose declared grid no longer matches its layout yields a strip of
-    // one card rather than a card. 54 of those shipped unnoticed, because
-    // nothing downstream looked at a picture's shape. No real card art is under
-    // 300px on its short edge or far off 1.4:1.
+    // one card rather than a card. 54 of those shipped unnoticed in an earlier
+    // pipeline, because nothing downstream looked at a picture's shape. No real
+    // card art is under 300px on its short edge or far off 1.4:1.
     final wrong = <String>[];
     for (final file in Directory(imageDirectory).listSync().whereType<File>()) {
       final size = _dimensions(file.uri.pathSegments.last);
@@ -93,8 +114,9 @@ void main() {
   });
 
   test('every image is a WebP', () {
-    // Flutter's engine cannot decode the AVIF and PNG the pipeline reads, so an
-    // image that slipped through untranscoded would render as nothing at all.
+    // Flutter's engine cannot decode the JPEG, PNG and AVIF the sprite sheets
+    // arrive as, so an image written in a sheet's own format would render as
+    // nothing at all.
     // Checked by magic number rather than by extension, which is the thing a
     // rename would get wrong.
     final wrong = <String>[];

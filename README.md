@@ -39,24 +39,23 @@ than quietly listing fewer cards than it has.
 ## Building
 
 ```sh
-/Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 flutter run
 ```
 
-The first script cuts each card out of the Tabletop Simulator sprite sheets it
-is stored in. The second reads the card data and those crops and writes
-`assets/`: it merges the card data, derives the starter decks, and **transcodes
-all 7,617 card images to WebP**, because Flutter's engine cannot decode AVIF and
-the one package that can offers no decode-time downsampling — which is what
-keeps this app inside its memory budget.
+That script writes all of `assets/`: it merges the card data, derives the starter
+decks, and cuts each card out of the Tabletop Simulator sprite sheet it is stored
+in, **writing all 7,618 images as WebP** — because Flutter's engine cannot decode
+the JPEG, PNG and AVIF the sheets arrive as, and the one package that can offers
+no decode-time downsampling, which is what keeps this app inside its memory
+budget.
 
 Of the generated assets the two JSON files are committed; `assets/CardImages/`
 is 1.19 GB and is not. **A fresh clone therefore has every card and no art, and
-the image tests fail until both scripts have been run.**
+the image tests fail until that script has been run.**
 
-54 cards have no art at all — the mod carries no object for them — and show
-their printed text on the detail screen instead.
+54 cards have no art — see Known gaps — and show their printed text on the
+detail screen instead.
 
 ## Prebuilt binaries
 
@@ -65,12 +64,12 @@ demand, and attaches both to the run. Neither is signed for distribution: the
 APK carries the debug keys, and the IPA has no signature at all, so **install
 it by re-signing with Sideloadly or AltStore**.
 
-CI cannot run the asset pipeline — it reads two upstream checkouts that exist
-only on the maintainer's machine — so the transcoded art is published once as
-a release asset and downloaded by each run:
+CI cannot run the asset pipeline — it reads a card-data checkout and a Tabletop
+Simulator installation that exist only on the maintainer's machine — so the art
+is published once as a release asset and downloaded by each run:
 
 ```sh
-./tools/publish_assets.sh   # 1.21 GB tarball -> the card-images-v2 release
+./tools/publish_assets.sh   # tarball -> the card-images-v4 release
 gh workflow run build.yml
 gh run download -n arkham-cards-apk
 ```
@@ -80,19 +79,25 @@ changes and what the failures mean.
 
 ## Where the data comes from
 
-Two upstream sources, neither in this repo and neither version-pinned:
+Five local paths, none in this repo and none version-pinned:
 
 | Source | Provides |
 | --- | --- |
 | `arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction and type names |
-| `~/Library/Tabletop Simulator` + the cached SCED boxes | 941 sprite sheets the card art is cut out of |
+| `~/Library/Tabletop Simulator/Saves/Arkham SCE *.json` | which player cards the mod stocks, and the sheet and cell each is on |
+| `~/Downloads/arkham/_boxes` | the 37 SCED campaign boxes, which stock the encounter cards the same way |
+| `~/Library/Tabletop Simulator/Mods/Images` | 1,412 sprite sheets the art is cut out of |
+| `~/Downloads/arkham/_sheets` | 306 more sheets, the ones the boxes name |
 
-`tools/extract_tts_images.py` cuts each card out of its sprite sheet.
-`tools/build_assets.py` then settles every quirk between the two sources —
-reprints filled in from the card they reprint and given its art, the two forms
-of card back collapsed into one field, the ten promo printings linked to the
-cards they are another edition of, the starter decks derived from `xp` — so no
-view has to carry a special case.
+The save file is auto-detected — the highest version in `Saves/` wins — and
+`ARKHAM_TTS_SAVE`, `ARKHAM_JSON_DATA`, `ARKHAM_TTS_SHEETS`, `ARKHAM_SCED_BOXES`
+and `ARKHAM_SCED_SHEETS` override each path.
+
+`tools/build_assets.py` settles every quirk between those sources — reprints
+filled in from the card they reprint and given its art, the two forms of card
+back collapsed into one field, the ten promo printings linked to the cards they
+are another edition of, the starter decks derived from `xp` — so no view has to
+carry a special case.
 
 **`docs/DATA.md` is the reference for that data.** Most of this project's
 complexity lives there, not in the app; if a piece of code looks
@@ -101,7 +106,7 @@ over-complicated, the reason is probably on that page.
 ## Testing
 
 ```sh
-flutter test    # 120 tests against the real bundled data
+flutter test    # 121 tests against the real bundled data
 flutter analyze
 ```
 
@@ -114,18 +119,19 @@ them a sliver of a card.
 
 ## Known gaps
 
-- **54 cards have no bundled art** and show their printed text instead. The
-  Tabletop Simulator mod the art comes from carries no object for them.
+- **54 cards have no art.** The save file stocks the player cards and the SCED
+  campaign boxes stock the encounter cards, but a few sides the mod prints as
+  the reverse of another card are in neither. They show their printed text
+  instead of a picture.
 - **English only.**
-- **Android is sideload-only.** 1.19 GB of assets is fine on iOS but exceeds
-  Google Play's 1 GB install-time asset-pack limit.
+- **Neither binary is signed for distribution.** The APK carries debug keys and
+  the IPA has no signature, so both are sideload-only.
 
 ## Layout
 
 ```
 docs/DATA.md                  the upstream data, in depth
-tools/extract_tts_images.py   crop the card art out of TTS sprite sheets
-tools/build_assets.py         asset pipeline, run by hand
+tools/build_assets.py         asset pipeline, run by hand: crop and merge
 tools/swap_list.json          which cards TTS stores back-to-front
 tools/publish_assets.sh       upload the art to a release, for CI to fetch
 lib/models/                   pure Dart, no Flutter imports
@@ -137,7 +143,7 @@ lib/models/                   pure Dart, no Flutter imports
   deck_store.dart             the starters, the imported decks and their file
   arkhamdb_client.dart        the one network call
 lib/views/                    Cupertino, one file per screen
-test/                         112 tests, against the real bundled data
+test/                         121 tests, against the real bundled data
 .github/workflows/build.yml   APK and unsigned IPA, on a tag or on demand
 .github/fetch-images.sh       unpacks the release art onto a runner
 RELEASING.md                  how to publish the art and cut a build

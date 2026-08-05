@@ -29,13 +29,13 @@ dev_dependencies:
 
 flutter:
   # No Material widgets are used, so its icon font is dead weight in a bundle
-  # that is already over a gigabyte.
+  # that is already 1.2 GB of card art.
   uses-material-design: false
 
   assets:
     - assets/cards.json
     - assets/decks.json
-    # 7,742 files, declared as a directory rather than one line each. Built by
+    # 7,618 files, declared as a directory rather than one line each. Built by
     # tools/build_assets.py and gitignored -- a fresh clone has card data and
     # no art until that script has been run.
     - assets/CardImages/

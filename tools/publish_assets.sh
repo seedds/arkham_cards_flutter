@@ -1,21 +1,21 @@
 #!/bin/sh
-# Attach the transcoded card art to a GitHub Release, so CI can build without it.
+# Attach the cropped card art to a GitHub Release, so CI can build without it.
 #
-# The images cannot be rebuilt on a runner: tools/build_assets.py reads two
-# upstream checkouts, ~1 GB between them, that live only on this machine. So
-# the transcoded WebPs are what has to travel, and a release asset is the only
-# place on GitHub that holds 1.13 GiB without metering storage or bandwidth.
+# The images cannot be rebuilt on a runner: tools/build_assets.py reads an
+# arkhamdb-json-data checkout and a Tabletop Simulator installation, ~2.9 GB
+# between them, that live only on this machine. So the WebPs are what has to
+# travel, and a release asset holds them without metering storage or bandwidth.
 # assets/CardImages/ stays gitignored and the repository stays 2 MB.
 #
 # Run after tools/build_assets.py changes what it writes, bumping TAG.
 set -eu
 
-TAG="${TAG:-card-images-v2}"
+TAG="${TAG:-card-images-v4}"
 ASSETS="assets/CardImages"
 # What build_assets.py expects to have written. A mismatch means the upstream
 # data moved, and cards.json must be republished with the art rather than the
 # two drifting apart.
-EXPECTED_IMAGES=7617
+EXPECTED_IMAGES=7618
 
 if [ ! -d "$ASSETS" ]; then
     echo "No card art at $ASSETS. Run tools/build_assets.py first." >&2
@@ -35,7 +35,7 @@ TARBALL="$BUILD/CardImages.tar"
 mkdir -p "$BUILD"
 
 # Uncompressed on purpose: these are WebP already, and gzip measured at 1.5%
-# off 1.13 GiB for minutes of CPU on both ends.
+# off for minutes of CPU on both ends.
 echo "packing $count images..."
 tar cf "$TARBALL" -C assets CardImages
 echo "$(du -h "$TARBALL" | cut -f1) tarball"

@@ -61,7 +61,7 @@ class CardRow extends StatelessWidget {
               ),
             ),
             Text(
-              _subtitle(card),
+              cardSubtitle(card),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -82,7 +82,10 @@ class CardRow extends StatelessWidget {
 /// The number is `printedNumber` rather than `position`, because a box prints
 /// two cards at one position: the two `Hunter's Hunger` read `#53a` and `#53b`,
 /// and without that 356 rows were byte-identical.
-String _subtitle(model.Card card) => [
+///
+/// Not private, because `CardText` prints the same line for a card it has
+/// neither art nor rules text for, and the two should not drift apart.
+String cardSubtitle(model.Card card) => [
   typeName(card.typeCode),
   card.factions.map(FactionStyle.name).join('/'),
   if (card.level > 0) 'Level ${card.level}',

@@ -40,15 +40,19 @@ void main() {
     });
 
     test('card without front image still loads', () {
+      // A side the art source has no picture of leaves the field null rather
+      // than naming a file that is not there. 04117a's front is one: the mod
+      // prints it as the reverse of 04117b, so only the back has a crop.
       final card = database.card('04117a')!;
       expect(card.frontImage, isNull);
-      expect(card.backImage, isNotNull);
+      expect(card.backImage, '04117b.webp');
     });
 
     test('cards wanting a back image that is not bundled', () {
-      // 50 cards say they have a second side but no image of it was bundled.
-      // The art is cropped from the Tabletop Simulator mod's sprite sheets, and
-      // the mod does not carry every printing the card data describes.
+      // 50 cards say they have a second side but no image of it was bundled --
+      // mostly acts and assets whose reverse the mod prints as a separate
+      // card, like the Heretic/Unfinished Business pairs. Was 2,114 while the
+      // crop read only the save file; the campaign boxes closed the rest.
       final wantsABack = database.all
           .where(
             (card) =>
@@ -62,12 +66,12 @@ void main() {
         reason: 'missing: ${wantsABack.take(5).map((card) => card.code)}',
       );
 
-      // 01121a has its front but not its back, so a missing back is its own
+      // Dream-Gate has its front but not its back, so a missing back is its own
       // case and not merely a card the extraction skipped entirely.
-      final predator = database.card('01121a')!;
-      expect(predator.backLink, '01121b');
-      expect(predator.backImage, isNull);
-      expect(predator.frontImage, '01121a.webp');
+      final dreamGate = database.card('06015a')!;
+      expect(dreamGate.backLink, '06015b');
+      expect(dreamGate.backImage, isNull);
+      expect(dreamGate.frontImage, '06015a.webp');
     });
 
     test('a reprint borrows the art of the card it reprints', () {
@@ -85,22 +89,23 @@ void main() {
     });
 
     test('a card with no picture of a side has its text', () {
-      // The detail screen shows words for a side it has no picture of. 54 cards
-      // have no picture at all -- the mod has no object for their code and they
-      // are nobody's reprint -- and every one of them has text to show instead.
+      // The detail screen shows words for a side it has no picture of. 54
+      // cards have no picture at all -- the ones neither the save file nor
+      // the campaign boxes stock. All have text; the wordless fallback is
+      // pinned at zero in card_images_test.dart, which owns it.
       final blank = database.all
           .where((card) => card.frontImage == null && card.backImage == null)
           .toList();
       expect(blank.length, 54);
-      expect(blank.every((card) => card.text != null), isTrue);
+      expect(blank.where((card) => card.text == null).length, 0);
 
-      // Predator or Prey has its front picture and neither a back picture nor
-      // back text, so there is nothing to turn over to and it stays one-sided.
-      final predator = database.card('01121a')!;
-      expect(predator.frontImage, isNotNull);
-      expect(predator.backImage, isNull);
-      expect(predator.backText, isNull);
-      expect(predator.hasBack, isFalse);
+      // Dream-Gate has its front picture and neither a back picture nor back
+      // text, so there is nothing to turn over to and it stays one-sided.
+      final dreamGate = database.card('06015a')!;
+      expect(dreamGate.frontImage, isNotNull);
+      expect(dreamGate.backImage, isNull);
+      expect(dreamGate.backText, isNull);
+      expect(dreamGate.hasBack, isFalse);
     });
 
     test('traits and skills', () {

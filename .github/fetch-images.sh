@@ -5,8 +5,8 @@
 # tools/publish_assets.sh for why it arrives as a release asset instead.
 #
 # Both jobs in build.yml run this, and both have 14 GB of disk against a
-# 1.13 GiB tarball that expands to another 1.13 GiB, so the tarball is deleted
-# the moment it has been read.
+# tarball that expands to as much again, so it is deleted the moment it has
+# been read.
 set -eu
 
 : "${IMAGES_TAG:?not set}"

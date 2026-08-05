@@ -1,14 +1,23 @@
 import 'package:flutter/cupertino.dart';
 
 import '../models/card.dart' as model;
+import 'card_row.dart';
 import 'faction_style.dart';
 
 /// A side of a card that the data describes but has no picture for.
 ///
-/// The art is cropped from the Tabletop Simulator mod, which has no object for
-/// every card code, so 124 fronts and 50 backs stand in as words. A row has no
-/// space for text and shows `CardPlaceholder`, which at that size is a bare
-/// tinted rectangle; this is the detail screen only.
+/// The art is cropped from the Tabletop Simulator mod's save file and the SCED
+/// campaign boxes, which between them miss only 124 fronts and 50 backs --
+/// mostly sides the mod prints as the reverse of another card. Those stand in
+/// as words.
+///
+/// The detail screen only. A row has no space for any of this and shows
+/// `CardPlaceholder`, which at that size is a bare tinted rectangle.
+///
+/// [text] is nullable so a card with no rules text on the shown side is not a
+/// name in the navigation bar above an empty screen: the card's identifying
+/// details are shown instead. Every artless card currently has text, but the
+/// fallback stays -- the pipeline pins that count, not the app.
 class CardText extends StatelessWidget {
   const CardText({
     required this.card,
@@ -18,7 +27,9 @@ class CardText extends StatelessWidget {
   });
 
   final model.Card card;
-  final String text;
+
+  /// The side's rules text, or null where the data carries none.
+  final String? text;
 
   /// The flavour printed on the same side as [text]. Passed in rather than read
   /// from [card], which carries one per side and cannot tell which this is.
@@ -26,10 +37,9 @@ class CardText extends StatelessWidget {
 
   /// Strips the markup this text carries.
   ///
-  /// A closed set, counted across the 202 bodies that actually render: six HTML
-  /// tags and the symbols below. The tags go entirely, since bold and italic
-  /// are not worth a rich-text renderer here; the symbols become the words they
-  /// stand for.
+  /// A closed set: six HTML tags and the symbols below. The tags go entirely,
+  /// since bold and italic are not worth a rich-text renderer here; the symbols
+  /// become the words they stand for.
   ///
   /// An unlisted token is stripped to its bare name rather than left in
   /// brackets, so a symbol a later box introduces reads as a word instead of as
@@ -76,7 +86,8 @@ class CardText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A local, because a field cannot be promoted to non-null.
+    // Locals, because a field cannot be promoted to non-null.
+    final text = this.text;
     final flavor = this.flavor;
     final border = BorderRadius.circular(12);
 
@@ -98,13 +109,45 @@ class CardText extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            plain(text),
-            style: TextStyle(
-              fontSize: 16,
-              color: CupertinoColors.label.resolveFrom(context),
+          if (text != null)
+            Text(
+              plain(text),
+              style: TextStyle(
+                fontSize: 16,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            )
+          else ...[
+            // The name too, which the navigation bar ellipsises at 46
+            // characters and is the only other thing naming the card.
+            Text(
+              card.name,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              cardSubtitle(card),
+              style: TextStyle(
+                fontSize: 13,
+                color: CupertinoColors.secondaryLabel.resolveFrom(context),
+              ),
+            ),
+            if (card.traits != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                card.traits!,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontStyle: FontStyle.italic,
+                  color: CupertinoColors.label.resolveFrom(context),
+                ),
+              ),
+            ],
+          ],
           if (flavor != null && flavor.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(

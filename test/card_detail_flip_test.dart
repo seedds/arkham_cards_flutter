@@ -1,6 +1,7 @@
 import 'package:arkham_cards/views/card_text.dart';
 import 'package:arkham_cards/views/card_detail_view.dart';
 import 'package:arkham_cards/views/card_image_view.dart';
+import 'package:arkham_cards/views/card_row.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -73,7 +74,7 @@ void main() {
 
     testWidgets('is absent for a one-sided card', (tester) async {
       // Roland's .38 Special: no back image and no back text, so nothing to
-      // turn over. 3,691 of the 5,928 cards are like this.
+      // turn over. 4,719 of the 5,928 cards are like this.
       await pumpDetail(tester, codes: ['01006']);
 
       expect(flipButton(), findsNothing);
@@ -96,23 +97,23 @@ void main() {
     testWidgets('shows a side as text where there is no picture of it', (
       tester,
     ) async {
-      // 03076a Constance Dumaine: the TTS mod has no object for this side, so
-      // her front is text and turning her over reaches a real picture. The
-      // reverse case -- a picture that flips to text -- no longer occurs, since
-      // a card the mod misses tends to be missing both sides at once.
-      final constance = database.card('03076a')!;
-      expect(constance.frontImage, isNull, reason: 'fixture must lack a front');
-      expect(constance.text, isNotNull);
-      expect(constance.backImage, isNotNull);
+      // 09519a The Eye of Ravens: the save file the art comes from stocks the
+      // customisable side of this relic and not the story side, so its front is
+      // text and turning it over reaches a real picture. One of only 10 cards
+      // this way round -- a card the save misses is usually missing both sides.
+      final relic = database.card('09519a')!;
+      expect(relic.frontImage, isNull, reason: 'fixture must lack a front');
+      expect(relic.text, isNotNull);
+      expect(relic.backImage, isNotNull);
 
-      await pumpDetail(tester, codes: ['03076a']);
+      await pumpDetail(tester, codes: ['09519a']);
       expect(find.byType(CardText), findsOneWidget);
 
       await tester.tap(flipButton());
       await tester.pumpAndSettle();
 
       expect(find.byType(CardText), findsNothing);
-      expect(shownImage(tester), '03076b.webp');
+      expect(shownImage(tester), '09519b.webp');
     });
 
     testWidgets('appears and disappears as the pager moves', (tester) async {
@@ -178,7 +179,10 @@ void main() {
     //
     // The rows cannot be told apart by their thumbnail any more -- all four
     // printings borrow the Core Set art, since the TTS mod carries Roland once
-    // -- so the row is taken by position instead.
+    // -- so the row is taken by position instead. The second, not the last:
+    // enough of the picker is now visible to build all four rows, and the
+    // fourth lands past the bottom edge of the test surface where a tap on it
+    // does not land.
     await pumpDetail(tester, codes: ['01001']);
     final roland = database.card('01001')!;
     expect(database.printings(roland), hasLength(4));
@@ -187,13 +191,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(shownImage(tester), '01001b.webp');
 
+    // Row order follows `printings`, so this is the Revised Core Set version --
+    // a different printing from the Core Set one on show, which is what makes
+    // the reset to the front meaningful.
     await tester.tap(
       find
-          .byWidgetPredicate(
-            (widget) =>
-                widget is CardImageView && widget.filename == '01001.webp',
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(CardRow),
           )
-          .last,
+          .at(1),
     );
     await tester.pumpAndSettle();
 

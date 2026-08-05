@@ -8,16 +8,15 @@ rather than in the code.
 ## Commands
 
 ```sh
-flutter test                      # 120 tests, ~2s, against the real bundled data
+flutter test                      # 121 tests, ~2s, against the real bundled data
 flutter analyze
 
-/Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 ./tools/publish_assets.sh         # push that art to the release CI builds from
 gh workflow run build.yml         # APK and unsigned IPA -- see RELEASING.md
 ```
 
-Use that Python for the asset scripts: it has Pillow, which the system one does
+Use that Python for the asset script: it has Pillow, which the system one does
 not.
 
 To see a screen without tapping through the simulator, name it at build time:
@@ -44,37 +43,47 @@ that way. Add a define for the screen you need instead.
 
 ## The asset pipeline is not source
 
-`assets/` comes from two scripts, run in order, reading sources that are not in
-this repo and are not version-pinned:
+`assets/` comes from one script reading five paths that are not in this repo and
+are not version-pinned:
 
 | Source | Provides |
 | --- | --- |
 | `~/Documents/arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction and type names |
-| `~/Library/Tabletop Simulator` + the cached SCED boxes | 941 sprite sheets the card art is cut out of |
+| `~/Library/Tabletop Simulator/Saves/Arkham SCE *.json` | which player cards the mod stocks, and the sheet and cell each is on |
+| `~/Downloads/arkham/_boxes` | the 37 SCED campaign boxes, which stock the encounter cards the same way |
+| `~/Library/Tabletop Simulator/Mods/Images` | 1,412 sprite sheets the art is cut out of |
+| `~/Downloads/arkham/_sheets` | 306 more sheets, the ones the boxes name |
 
-`tools/extract_tts_images.py` crops one PNG per card code out of those sheets.
-`tools/build_assets.py` then settles every data quirk — reprints filled in and
-given the original's art, the two forms of card back collapsed to one field, the
-ten promo printings linked, the starter decks derived from `xp` — so no widget
-carries a special case for any of it. `docs/DATA.md` explains each one.
+The save file is **auto-detected**: the highest `Arkham SCE <version>.json` in
+`Saves/` wins, compared as a tuple of integers so `4.10.0` beats `4.8.0`. Set
+`ARKHAM_TTS_SAVE` to override. `ARKHAM_JSON_DATA`, `ARKHAM_TTS_SHEETS`,
+`ARKHAM_SCED_BOXES` and `ARKHAM_SCED_SHEETS` do the same for the others.
 
-**It also transcodes.** Flutter's engine cannot decode AVIF, which some sheets
-arrive as. `flutter_avif` exists but offers no decode-time downsampling, which is
-the mechanism the whole memory budget rests on, so it is not an option. All
-7,617 referenced images are re-encoded as WebP q80 at native resolution
-(1.19 GB) and each card records the `.webp` filename.
+`tools/build_assets.py` crops the art and settles every data quirk — reprints
+filled in and given the original's art, the two forms of card back collapsed to
+one field, the ten promo printings linked, the starter decks derived from `xp` —
+so no widget carries a special case for any of it. `docs/DATA.md` explains each
+one.
+
+**The crop writes WebP directly.** Flutter's engine cannot decode the JPEG, PNG
+and AVIF the sheets arrive as. `flutter_avif` exists but offers no decode-time
+downsampling, which is the mechanism the whole memory budget rests on, so it is
+not an option. All 7,618 referenced images are written as WebP q80 at native
+resolution (1.19 GB) and each card records the `.webp` filename.
 
 `assets/CardImages/` is gitignored, so **a fresh clone has card data and no art
-until both scripts have been run**, and the image tests fail until then. The two
+until that script has been run**, and the image tests fail until then. The two
 JSON files are committed.
 
-Re-running either is cheap: a card already cropped, or an image whose source has
-not changed, is skipped.
+Re-running is cheap: a WebP newer than the sheet it came from is skipped. Each
+run leaves `build/crops.csv`, one row per image, which is where to look when a
+card's picture is wrong rather than absent.
 
-**The art does not cover everything.** The TTS mod carries no object for 54
-cards, which show their text on the detail screen instead of a picture. Both
-`assets.arkhamhorror.app` and `arkhamdb.com` would close that gap over the
-network; that is a deliberate no — see `docs/DATA.md`.
+**The art covers the player cards and the encounter cards.** The save stocks
+the former, the campaign boxes the latter; 54 cards — mostly sides the mod
+prints as the reverse of another card — have no picture and show their text
+instead. Both `assets.arkhamhorror.app` and `arkhamdb.com` would close that
+last gap over the network; that is a deliberate no — see `docs/DATA.md`.
 
 ## Verify by looking, not just by testing
 
@@ -113,10 +122,12 @@ codebase:
 | Flutter's `ImageCache` can be split in two | It cannot — one LRU, so there is no way to stop an opened card evicting a screenful of rows. A budget well above the row working set stands in for that. |
 | Sorting the browse list can reorder `all` | It cannot. The cycle list is derived by walking `all` in bundled order, so a sort applies to the result and never to the field. |
 | `flutter build ipa --no-codesign` gives an unsigned IPA | There is no such flag on `build ipa`, and its export step needs a signing identity regardless. `--no-codesign` is on `build ios`, and stops at `build/ios/iphoneos/Runner.app`. The workflow zips that into `Payload/` by hand. |
-| A CI runner can hold two of these builds | It has 14 GB. A release iOS build leaves two distinct 1.2 GB copies of `Runner.app` — `iphoneos/` and `Release-iphoneos/`, different inodes, not hardlinks — plus dSYMs, and peaks near 8.4 GB. The workflow deletes the intermediates before zipping and prints `df -h`. |
+| A CI runner can hold two of these builds | It has 14 GB. A release iOS build leaves two distinct copies of `Runner.app` — `iphoneos/` and `Release-iphoneos/`, different inodes, not hardlinks — plus dSYMs. The workflow deletes the intermediates before zipping and prints `df -h`. |
+| The two sheet caches are interchangeable | They are not. `Mods/Images` and `~/Downloads/arkham/_sheets` share one sheet name, and `Mods/Images` holds a 14 KB truncated copy of the 422 KB file. That sheet is `01693`'s, so `_sheets` is indexed second and its copy wins. |
 | A sprite sheet's declared grid says how to cut it | `NumWidth`/`NumHeight` can be left over from an edit that split the sheet, so slicing a single 750x1050 card by its declared `7x2` yields a 107x525 sliver. 54 shipped that way. Check the *cell*, not the sheet: a 4x2 sheet of cards is 3000x2100, whose 1.43 is as card-shaped as a card, and testing the sheet wrote 684 whole sprite sheets as single cards. |
 | `SidewaysCard` tells you which way up a crop goes | Not on its own — 26 came out a quarter-turn round. `type_code` is the authority, and agreed with the old image source on 7,739 of 7,742. |
 | Every printing of a card has its own art | Not any more. The TTS mod stocks a card once, under its first printing's code, so a reprint borrows the original's picture and all four Roland Banks rows show one portrait. They are told apart by box and number. |
+| A card with no art has text to fall back on | While the encounter art was out, 101 had neither, because their rules were printed on a back there was also no picture of. They were a name on an empty screen until `CardText` learned to print the card's identifying details instead. Every artless card has text today, but the fallback stays. |
 
 ## Conventions
 
@@ -134,13 +145,16 @@ codebase:
 ## Decisions worth not relitigating
 
 - **`uses-material-design: false`.** No Material widget is used, and the icon
-  font is dead weight in a bundle already over a gigabyte.
+  font is dead weight in a bundle that ships 1.2 GB of card art.
 - **The detail screen is art, not data.** Everything but name, type, class, box
-  and number is printed on the card itself. The one exception is a side the TTS
-  mod has no picture of, which shows the card's text instead.
+  and number is printed on the card itself. The exception is a side there is
+  no picture of, which shows the card's text, or its identifying details when
+  there is no text either.
 - **Search matches the card name only.** Traits and card text were once
   searched too, which buried the card you were naming under every card that
   mentions it.
-- **Android is sideload-only.** 1.19 GB of assets is fine on iOS (App Store caps
-  at 4 GB) but exceeds Google Play's 1 GB install-time asset-pack limit, so a
-  Play build would need Play Asset Delivery or a lower-resolution variant.
+- **The encounter art is in, at the price of two unversioned caches.** The SCED
+  campaign boxes and a 1.8 GB sheet cache live outside the TTS directory and
+  are populated by a script in another repo. It was once cut for that reason
+  and restored because 3,769 artless cards cost more; `docs/DATA.md` records
+  the trade both ways.

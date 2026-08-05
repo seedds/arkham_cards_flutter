@@ -4,8 +4,8 @@ How to get an APK and an IPA out of GitHub Actions.
 
 CI cannot build the card art. The pipeline reads a Tabletop Simulator install
 and a card-data checkout that exist only on the maintainer's machine — so the
-transcoded art is published once as a release asset, and every CI run downloads
-it. That is step 1, and it is only repeated when the art actually changes.
+art is published once as a release asset, and every CI run downloads it. That is
+step 1, and it is only repeated when the art actually changes.
 
 Everything here needs `gh` authenticated against the repo.
 
@@ -16,13 +16,12 @@ had it published.
 
 ```sh
 # if not already built
-/Users/f2pgod/Documents/spyder312/bin/python tools/extract_tts_images.py
 /Users/f2pgod/Documents/spyder312/bin/python tools/build_assets.py
 ./tools/publish_assets.sh
 ```
 
-The script checks the directory holds exactly 7,617 WebPs, tars them, creates
-the `card-images-v2` release and uploads a **1.21 GB** tarball, then deletes the
+The script checks the directory holds exactly 7,618 WebPs, tars them, creates
+the `card-images-v4` release and uploads a **1.2 GB** tarball, then deletes the
 local copy. Re-running is safe: an existing asset is replaced with `--clobber`.
 
 The tarball is uncompressed on purpose. These are WebP already, and gzip
@@ -32,17 +31,17 @@ measured at 1.5% off for minutes of CPU on both ends.
 look like it has hung. To watch from another terminal:
 
 ```sh
-gh release view card-images-v2
+gh release view card-images-v4
 ```
 
 Confirm it landed:
 
 ```sh
-gh release view card-images-v2 --json assets \
+gh release view card-images-v4 --json assets \
   -q '.assets[] | "\(.name)  \(.size) bytes"'
 ```
 
-Expect `CardImages.tar  1211392000 bytes`. A size well below that means the
+Expect `CardImages.tar  1211588096 bytes`. A size well below that means the
 upload was cut short — re-run the script.
 
 ### When the art changes
@@ -76,7 +75,7 @@ git tag v1.0.0 && git push origin v1.0.0
 There is no build on ordinary pushes. Each run moves several GB, which is not
 worth spending on every commit.
 
-Both jobs fetch the art, count it, then run `flutter analyze` and the 112 tests
+Both jobs fetch the art, count it, then run `flutter analyze` and the 121 tests
 before building. `test/card_images_test.dart` checks every filename in
 `cards.json` resolves and every file is really a WebP, so it doubles as the
 integrity check on the transfer.
@@ -105,15 +104,14 @@ Or from the run's summary page in a browser.
 **`release not found` in step 2** — step 1 has not finished. The workflow cannot
 download a release that does not exist yet.
 
-**`unpacked N images, expected 7617`** — the tarball and `cards.json` have
+**`unpacked N images, expected 7618`** — the tarball and `cards.json` have
 drifted. Re-run `tools/publish_assets.sh`.
 
-**A disk error, or a job killed mid-build** — the runner has 14 GB and the iOS
-build peaks near 8.4 GB of it. A release build leaves two distinct 1.2 GB copies
-of `Runner.app` (`iphoneos/` and `Release-iphoneos/` — different inodes, not
-hardlinks) plus dSYMs; the workflow already deletes the intermediates before
-zipping. Both jobs print `df -h /` after fetching the art and after building,
-so the logs show where the headroom went.
+**A disk error, or a job killed mid-build** — the runner has 14 GB. A release
+build leaves two distinct copies of `Runner.app` (`iphoneos/` and
+`Release-iphoneos/` — different inodes, not hardlinks) plus dSYMs; the workflow
+already deletes the intermediates before zipping. Both jobs print `df -h /` after
+fetching the art and after building, so the logs show where the headroom went.
 
 **The app builds but shows blank cards** — art that failed to decode. The WebP
 assertion in `card_images_test.dart` should have caught it upstream of the

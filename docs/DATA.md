@@ -1,24 +1,34 @@
 # The upstream data
 
 Most of this project's complexity is not in the app — it is in the shape of the
-two upstream sources. This document is the reference for that shape. If a piece
-of code looks over-complicated, the reason is probably on this page.
+upstream sources. This document is the reference for that shape. If a piece of
+code looks over-complicated, the reason is probably on this page.
 
-Neither source is in this repo, and neither is version-pinned.
+No source is in this repo, and none is version-pinned.
 
 | Source | Provides |
 | --- | --- |
 | `~/Documents/arkhamdb-json-data` | 5,928 cards in 159 pack files, plus pack, cycle, faction, type and encounter-set names |
-| `~/Library/Tabletop Simulator` + the SCED boxes | the sprite sheets the card art is cut out of |
+| `~/Library/Tabletop Simulator/Saves/Arkham SCE *.json` | which player cards the mod stocks, and the sheet and cell each is on |
+| `~/Downloads/arkham/_boxes` | the 37 SCED campaign boxes, which stock the encounter cards the same way |
+| `~/Library/Tabletop Simulator/Mods/Images` | 1,412 sprite sheets the art is cut out of |
+| `~/Downloads/arkham/_sheets` | 306 more sheets, the ones the boxes name |
 
-`tools/extract_tts_images.py` crops the art; `tools/build_assets.py` reads the
-card data and the crops and writes `assets/`. The guiding rule: **settle a data
-quirk in the build script, so the Dart model does not carry a special case for
-it.**
+`tools/build_assets.py` crops the art, merges it with the card data and writes
+`assets/`. The guiding rule: **settle a data quirk in the build script, so the
+Dart model does not carry a special case for it.**
 
-The images are transcoded, not copied: Flutter cannot decode the AVIF the
-sheets sometimes arrive as, so every crop is re-encoded as WebP and each card
-records the WebP filename.
+The crop writes WebP directly: Flutter cannot decode the JPEG, PNG and AVIF the
+sheets arrive as, so each cell is re-encoded as it is cut and each card records
+the WebP filename.
+
+### The save file is auto-detected
+
+`Saves/Arkham SCE <version>.json` carries the mod's version in its name, so it
+changes with every release and cannot be fixed in the source. The highest version
+in `Saves/` wins, compared as **a tuple of integers rather than as a string** —
+`4.10.0` is newer than `4.8.0` and sorts before it as text. `ARKHAM_TTS_SAVE`
+overrides.
 
 ### Why the art comes from Tabletop Simulator
 
@@ -29,8 +39,8 @@ the script that populated it read the very tree it was replacing to decide
 what to write.
 
 The [SCED](https://github.com/argonui/SCED) Tabletop Simulator mod carries the
-same art as sprite sheets, published per campaign box, and every sheet is
-already in the local cache. The trade is coverage: see
+same art as sprite sheets, and the save file says which cell of which sheet each
+card is on. The trade is coverage: see
 [What the extraction cannot reach](#what-the-extraction-cannot-reach).
 
 ## The card set, by the numbers
@@ -96,18 +106,25 @@ picture shows the right card. Do not conflate the two relations.
 
 ### 2. Front and back are independently optional
 
-`05288a` (Dark Knowledge v. II) has a back image and **no front image**. A card
+`09519a` (The Eye of Ravens) has a back image and **no front image**. A card
 having art at all is not implied by it having a back, or the reverse.
 
 - 124 cards have no front art
-- 54 cards have no art on either side
+- 54 have no art on either side
+- 70 have a back but no front
 
-The detail screen shows the card's text for a side with no picture; a row, which
-has no space for text, shows `CardPlaceholder`. That widget sheds its contents as
-it shrinks, so a 28pt row thumbnail is a bare tinted rectangle — the icon and
-name it draws at full size overflow a box that small, and the row prints the name
-beside it anyway. Only `09600a` Café Luna and `10593a` Muddy Fen have neither art
-nor text, so they are the only two cards whose *detail* screen shows it.
+The detail screen shows the card's text for a side with no picture. While the
+encounter art was out that left **101 cards with no text either** — agendas and
+acts whose rules are printed on a back there was also no picture of — and they
+were a name in the navigation bar above an empty screen. `CardText` prints the
+card's name, type, class, box, number and traits when it has no body text, so
+every card shows something; today every artless card has text, and
+`card_images_test.dart` pins the wordless count at zero.
+
+A row has no space for any of that and shows `CardPlaceholder` instead. That
+widget sheds its contents as it shrinks, so a 28pt row thumbnail is a bare tinted
+rectangle — the icon and name it draws at full size overflow a box that small, and
+the row prints the name beside it anyway. The detail screen no longer reaches it.
 
 ### 3. 169 cards were printed more than once
 
@@ -315,13 +332,21 @@ silent. Do not "fix" the loader to warn on all repeats; it will just be noise.
 
 ## Images
 
-The art is cut out of Tabletop Simulator sprite sheets by
-`tools/extract_tts_images.py`, which writes one PNG per card code into a
-staging directory. `build_assets.py` transcodes those to WebP and records the
-`.webp` filename on each card, so the app never guesses an extension or stats
-the filesystem.
+The art is cut out of Tabletop Simulator sprite sheets by `build_assets.py`,
+which writes each cell straight to WebP in `assets/CardImages/` and records the
+`.webp` filename on each card, so the app never guesses an extension or stats the
+filesystem.
 
-7,617 images end up bundled, at 1.19 GB.
+7,618 images end up bundled, at 1.19 GB.
+
+The crop is parallelised **per sheet, not per card**, because a sheet runs up to
+7500x7350 and decoding it once for each of the 40 cards on it dominates the run.
+Each run leaves `build/crops.csv`, one row per image with the cell, grid and
+status, which is where to look when a card's picture is wrong rather than absent.
+
+Re-running is incremental on the sheet's own timestamp: a WebP newer than the
+sheet it came from is left alone. `--force` re-crops everything; `--skip-images`
+rebuilds only the JSON, naming exactly the art already bundled.
 
 ### How TTS stores a card
 
@@ -399,34 +424,62 @@ box and number, which is what they are for. 135 groups still have distinct art.
 
 ### What the extraction cannot reach
 
-54 cards have no picture at all, and `build_assets.py` names the missing backs
-at the end of its run. Of 176 cards that started with no front, 175 were codes
-the mod carries no object for — it uses Core Set `01001` for Roland and never
-the Revised reprint — and exactly 1 was a crop failure, a truncated cached
-sheet. The reprint fallback then recovered 122 of them.
+**54 cards have no picture on either side** — mostly story and location halves
+the mod prints as the reverse of another card, like the six Unfinished Business
+backs of the Heretic pairs, plus 19 story cards, 11 enemies and both Hank Samson
+records. 50 cards claim a second side whose picture is missing and draw no flip
+button; 124 fronts have no image, of which 70 have a back image to flip to.
+`09519a` The Eye of Ravens is the worked example of a text front over a real
+back, and the fixture `card_detail_flip_test.dart` uses.
 
-Every one of the 54 has card `text`, and the detail screen shows that instead
-via `CardText`. 50 more cards claim a second side whose picture is missing and
-draw no flip button.
+The detail screen shows the card's `text` for a pictureless side, via
+`CardText`, with the printing details as the final fallback — see
+[quirk 2](#2-front-and-back-are-independently-optional).
 
-The complementary case is gone: **no card now flips from a picture to a text
-back.** A card the mod misses tends to miss both sides at once, so the text
-stands in for the *front* and the flip reaches a real picture — `03076a`
-Constance Dumaine is the worked example.
+Two hosts do serve the remaining gap — `assets.arkhamhorror.app` and
+`arkhamdb.com/bundles/cards/`. Neither is used: the app and its pipeline are
+offline by design, and a runtime fetch would need a cache, an eviction policy and
+a loading state that the `ResizeImage` memory budget rests on not having.
 
-Two hosts do serve the whole gap — `assets.arkhamhorror.app` has all 173 that
-TTS lacks, byte-identical to the old source, and `arkhamdb.com/bundles/cards/`
-has 106 of them. Neither is used: the app and its pipeline are offline by
-design, and a runtime fetch would need a cache, an eviction policy and a
-loading state that the `ResizeImage` memory budget rests on not having.
+### The encounter art and the campaign boxes
 
-**Markup.** The text these cards fall back to is not a plain string. Across the
-202 bodies that render there are six HTML tags (`<b>`, `<i>`, `<hr>`,
-`<blockquote>`, `<u>`, `<br>`) and 30 symbol tokens. `CardText.plain` strips the
-tags, turns `<hr>` into a blank line, and spells the symbols out as words — the
-app has no icon assets to draw them with. An unlisted token is reduced to its
-bare name, so a symbol a later box introduces reads as a word rather than as
-`[tdc_rune_x]`.
+The save file stocks only the player cards — read alone it produces 2,174
+images and leaves 3,769 cards artless, every location, act, agenda, enemy and
+treachery among them. The encounter side comes from two caches **outside** the
+TTS directory: the 37 SCED campaign box JSONs (`~/Downloads/arkham/_boxes`,
+18 MB, `ARKHAM_SCED_BOXES` overrides) and a second sheet cache
+(`~/Downloads/arkham/_sheets`, 1.8 GB, `ARKHAM_SCED_SHEETS` overrides). Both
+were populated by a script in another repo and neither is version-pinned.
+
+That cost is why they were once cut, and the trade both ways, measured:
+
+| | Save only | Save + boxes |
+| --- | --- | --- |
+| Images | 2,174 | 7,618 |
+| Bundle | 0.32 GB | 1.19 GB |
+| Artless cards | 3,769 | 54 |
+| Cards with neither art nor text | 101 | 0 |
+| Source trees | 3, ~2.9 GB | 5, ~14 GB |
+
+The boxes are the same TTS object tree as the save and are walked by the same
+`iter_cards`; nothing else about the crop changes — the sheet lookup, the grid
+override and the orientation rule are all keyed on the sheet URL, not on which
+file listed it. The save is read first, so where a code appears in both (167
+do, one with a different sheet) the save's printing wins and the player-card
+crops are unchanged. `library.json` in the box directory is the mod's manifest,
+not a box, and is skipped.
+
+**The two sheet caches are not interchangeable.** They share exactly one sheet
+name, and `Mods/Images` holds a **14 KB truncated copy** of the 422 KB file in
+`_sheets`. That sheet is `01693`'s — the one crop that failed while `Mods/Images`
+was the only source — so `_sheets` is indexed second and wins the clash.
+
+**Markup.** The text these cards fall back to is not a plain string: six HTML
+tags (`<b>`, `<i>`, `<hr>`, `<blockquote>`, `<u>`, `<br>`) and 30 symbol tokens.
+`CardText.plain` strips the tags, turns `<hr>` into a blank line, and spells the
+symbols out as words — the app has no icon assets to draw them with. An unlisted
+token is reduced to its bare name, so a symbol a later box introduces reads as a
+word rather than as `[tdc_rune_x]`.
 
 ### arkhamdb and the local JSON disagree about the promos
 
@@ -447,33 +500,25 @@ already been drawn wrongly once from exactly this field.
 
 ### Where the sprite sheets come from
 
-941 sheets, all already cached locally, in two places:
+`~/Library/Tabletop Simulator/Mods/Images`, which is what TTS itself downloads
+when a box is opened in-game (1,412 sheets), overlaid by
+`~/Downloads/arkham/_sheets` (306 sheets, one name shared — see above). The
+save and boxes between them reference 953 sheets, supplying all 7,618 images.
 
-| | Sheets | Wanted images they supply |
-| --- | --- | --- |
-| `~/Library/Tabletop Simulator/Mods/Images` | 676 | 3,426 |
-| the sheet cache | 265 | 4,143 |
+They are keyed by TTS's own cache-name scheme: the URL with `/:-_.?=%` stripped.
+`sheet_filename` reproduces it, which is why the existing cache can be read
+as-is with no downloads.
 
-The first is what TTS itself downloads when a box is opened in-game, and what
-`~/Sync/Python_Scripts/tts_json_backup/tts_json_backup.py` tops up. The second
-holds the sheets for boxes never opened — most of the encounter card art.
-
-Both are keyed by TTS's own cache-name scheme: the URL with `/:-_.?=%` stripped.
-`sheet_filename` reproduces it, which is why the existing cache can be reused
-as-is.
-
-Which boxes to read comes from the SCED `library.json` manifest: the 37 of 191
-entries authored by Fantasy Flight Games with type `campaign` or `scenario`.
-
-`DOWNLOAD_SHEETS` is deliberately absent — the extraction is offline. A sheet
-that is genuinely missing is reported and its cards fall back to text.
+A sheet that is genuinely absent is reported in `build/crops.csv` as `sheet not
+cached` and its cards fall back to text. There is no download path, deliberately:
+the pipeline is offline.
 
 ### `extract_card_images.py` was the ancestor, not the build
 
-`~/Sync/Python_Scripts/tts_json_backup/extract_card_images.py` is where this
+`~/Sync/Python_Scripts/tts_json_backup/extract_card_images.py` is where the crop
 logic came from. Do not run it against this project: its `APP_SYNC` mode reads
 the `arkham-horror` directory for its wanted-file list, its resolution floor and
-its identity check — the very tree this pipeline replaced. `tools/extract_tts_images.py`
+its identity check — the very tree this pipeline replaced. `build_assets.py`
 derives all three locally instead, from the pack files and `type_code`.
 
 ## The arkhamdb API
